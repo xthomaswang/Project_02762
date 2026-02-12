@@ -28,10 +28,16 @@ env/
 Thumbs.db
 
 # Data (large files)
-data/raw/*.png
-data/raw/*.jpg
-data/raw/*.tif
-!data/raw/.gitkeep
+data/**/*.png
+data/**/*.jpg
+data/**/*.tif
+data/**/*.csv
+!data/.gitkeep
+
+# Model weights
+*.pth
+*.pt
+*.onnx
 
 # Logs
 *.log

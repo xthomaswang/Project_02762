@@ -2,117 +2,104 @@
 
 ## Team Roles Overview
 
-| Member | Background | Primary Role | Key Folders |
-|--------|-----------|--------------|-------------|
-| **T** | CS + Robotics | System Integration + Robot Control | `robot/`, `integration/`, `scripts/` |
-| **A** | CS + ML | Computer Vision + ML Pipeline | `vision/`, `ml/` |
-| **Y** | Biology + Documentation | Experiment Design + Documentation | `experiments/`, `docs/` |
-| **D** | Biology + Basic Coding | Data Processing + Experiment Support | `data/`, `scripts/`, `notebooks/` |
+| Member | Background | Primary Role | Key Files |
+|--------|-----------|--------------|-----------|
+| **T** | CS + Robotics | System Integration + Robot Control | `src/robot.py`, `src/protocol.py`, `src/recovery.py`, `scripts/` |
+| **A** | CS + ML | Computer Vision + ML Pipeline | `src/vision.py`, `src/ml.py`, `src/pipeline.py` |
+| **Y** | Biology + Documentation | Experiment Design + Documentation | `configs/`, `docs/` |
+| **D** | Biology + Basic Coding | Data Processing + Experiment Support | `data/`, `notebooks/` |
 
 ---
 
 ## Detailed Task Breakdown
 
-### T — System Integration + Robot Control
+### T -- System Integration + Robot Control
 
-**Primary folders:** `robot/`, `integration/`, `scripts/`
+**Primary files:** `src/robot.py`, `src/protocol.py`, `src/recovery.py`
 
-| Task | Description | Folder | Priority |
-|------|-------------|--------|----------|
-| OT-2 protocol development | Write Opentrons Python protocols for aspirating/dispensing R/G/B dyes into 96-well plate | `robot/protocols/` | High |
-| Robot configuration | Define labware positions, tip rack setup, pipette calibration configs | `robot/configs/` | High |
-| End-to-end pipeline | Build the main loop: ML suggests volumes → robot dispenses → camera captures → CV extracts color → ML updates | `integration/` | High |
-| Hardware interface | Abstract robot commands so ML/CV modules can call them without OT-2 specifics | `robot/` | Medium |
-| Setup scripts | Environment setup, dependency installation, hardware check scripts | `scripts/` | Medium |
-
-**Collaboration:** Works closely with **A** on the integration layer — T handles robot I/O, A handles vision/ML I/O, both co-own `integration/`.
+| Task | Description | File | Priority |
+|------|-------------|------|----------|
+| OT-2 robot control | OT2Robot class for HTTP API commands (aspirate, dispense, move, etc.) | `src/robot.py` | Done |
+| Protocol execution | Task-based protocol executor with vision verification | `src/protocol.py` | Done |
+| Error recovery | Config-driven recovery plan execution | `src/recovery.py` | Done |
+| End-to-end pipeline | Integrate robot actions into active learning loop | `src/pipeline.py` | High |
+| Entry point scripts | CLI scripts for running experiments | `scripts/` | Medium |
 
 ---
 
-### A — Computer Vision + ML Pipeline
+### A -- Computer Vision + ML Pipeline
 
-**Primary folders:** `vision/`, `ml/`
+**Primary files:** `src/vision.py`, `src/ml.py`, `src/pipeline.py`
 
-| Task | Description | Folder | Priority |
-|------|-------------|--------|----------|
-| Image preprocessing | Crop well plate region, normalize lighting, white balance correction | `vision/preprocessing/` | High |
-| Well detection | Detect and locate individual wells in the plate image (circle detection, grid alignment) | `vision/detection/` | High |
-| Color extraction | Extract average RGB/HSV values from each detected well | `vision/color_extraction/` | High |
-| Surrogate model | Implement Gaussian Process (or other) model mapping dye volumes → observed color | `ml/models/` | High |
-| Acquisition function | Implement active learning acquisition (Expected Improvement, UCB, etc.) to suggest next experiments | `ml/acquisition/` | High |
-| ML utilities | Color distance metrics (Delta-E), model evaluation, hyperparameter tuning | `ml/utils/` | Medium |
-
-**Collaboration:** Works closely with **T** on integration. Consults **Y** for color science and experiment constraints.
+| Task | Description | File | Priority |
+|------|-------------|------|----------|
+| Camera + detection | Camera class, YOLO prediction, tip/liquid checks | `src/vision.py` | Done |
+| Surrogate model | Gaussian Process model mapping dye volumes to observed color | `src/ml.py` | Done |
+| Acquisition function | Expected Improvement / UCB for next-experiment selection | `src/ml.py` | Done |
+| Active learning loop | Orchestrate ML + robot + vision in iterative loop | `src/pipeline.py` | High |
+| Color extraction | Extract RGB from well plate images (integrate into vision.py) | `src/vision.py` | High |
 
 ---
 
-### Y — Experiment Design + Documentation
+### Y -- Experiment Design + Documentation
 
-**Primary folders:** `experiments/`, `docs/`
+**Primary files:** `configs/`, `docs/`
 
-| Task | Description | Folder | Priority |
-|------|-------------|--------|----------|
-| Experiment design | Define dye concentration ranges, mixing ratios, well plate layout, target colors | `experiments/configs/` | High |
-| Experimental protocol | Document step-by-step lab procedures (safety, setup, execution) | `docs/` | High |
-| Results analysis | Interpret experimental results, assess color accuracy, convergence analysis | `experiments/results/` | Medium |
-| Project report | Write final report: introduction, methods, results, discussion | `docs/` | Medium |
-| Progress documentation | Meeting notes, weekly progress, milestone tracking | `docs/` | Ongoing |
-
-**Collaboration:** Works with **D** on experiment parameter design. Provides biological/chemistry context to **T** and **A** for implementation decisions.
+| Task | Description | Location | Priority |
+|------|-------------|----------|----------|
+| Experiment config | Define dye ranges, target colors, well plate layout | `configs/experiment.yaml` | High |
+| Lab procedures | Document safety, setup, and execution protocols | `docs/` | High |
+| Results analysis | Interpret results, assess convergence | `notebooks/` | Medium |
+| Project report | Final report with methods, results, discussion | `docs/` | Medium |
 
 ---
 
-### D — Data Processing + Experiment Support
+### D -- Data Processing + Experiment Support
 
-**Primary folders:** `data/`, `scripts/`, `notebooks/`
+**Primary files:** `data/`, `notebooks/`
 
-| Task | Description | Folder | Priority |
-|------|-------------|--------|----------|
-| Synthetic data generation | Generate simulated color mixing data for testing ML pipeline before wet lab | `data/synthetic/`, `scripts/` | High |
-| Data preprocessing | Clean and format raw image data and robot logs into structured datasets | `data/processed/` | High |
-| Data pipeline scripts | Scripts for data format conversion, batch processing, CSV/JSON export | `scripts/` | Medium |
-| Visualization notebooks | Jupyter notebooks for EDA, color space visualization, model performance plots | `notebooks/` | Medium |
-| Experiment support | Assist **Y** with experiment parameter tuning based on data analysis | `data/`, `experiments/` | Ongoing |
-
-**Collaboration:** Supports **Y** on experiment design with data-driven insights. Provides processed data to **A** for model training.
+| Task | Description | Location | Priority |
+|------|-------------|----------|----------|
+| Synthetic data | Simulated color mixing data for offline ML testing | `data/`, `notebooks/` | High |
+| Data preprocessing | Clean/format raw images and robot logs | `data/` | High |
+| Visualization | Jupyter notebooks for EDA and model performance | `notebooks/` | Medium |
+| Experiment support | Assist Y with parameter tuning via data analysis | `notebooks/` | Ongoing |
 
 ---
 
 ## Collaboration Map
 
 ```
-    T (Robot/Integration)  <------>  A (Vision/ML)
-           |                              |
-           |         integration/         |
-           |______________________________|
-           |                              |
-           v                              v
-    Y (Experiment/Docs)   <------>  D (Data/Scripts)
+    T (Robot/Protocol)  <------>  A (Vision/ML)
+           |                           |
+           |      src/pipeline.py      |
+           |___________________________|
+           |                           |
+           v                           v
+    Y (Experiment/Docs)  <------>  D (Data/Notebooks)
 ```
-
-- **T ↔ A**: Co-own `integration/`. T handles robot I/O, A handles vision/ML I/O.
-- **Y ↔ D**: Co-own experiment design. Y provides domain knowledge, D provides data analysis.
-- **T ↔ Y**: Y defines experiment parameters, T translates them into robot protocols.
-- **A ↔ D**: D generates synthetic/processed data, A uses it for model development.
 
 ---
 
 ## Development Phases
 
 ### Phase 1: Foundation (Week 1-2)
-- [ ] **T**: Set up OT-2 protocol skeleton, test basic liquid handling
-- [ ] **A**: Build image preprocessing + well detection pipeline
+- [x] **T**: Port OT-2 control code into OT2Robot class
+- [x] **T**: Port protocol execution + error recovery
+- [x] **A**: Port vision detection pipeline
+- [x] **A**: Implement GP surrogate model + acquisition functions
 - [ ] **Y**: Define initial experiment parameters and target colors
 - [ ] **D**: Generate synthetic color mixing dataset
 
 ### Phase 2: Core Pipeline (Week 3-4)
-- [ ] **T**: Complete robot protocols for variable-volume dispensing
-- [ ] **A**: Implement surrogate model + acquisition function
+- [ ] **T**: Test robot commands against live OT-2
+- [ ] **A**: Implement color extraction from well plate images
+- [ ] **A**: Integrate vision into active learning pipeline
 - [ ] **Y**: Finalize well plate layout and experiment protocol
 - [ ] **D**: Build data preprocessing pipeline for real images
 
 ### Phase 3: Integration (Week 5-6)
-- [ ] **T + A**: Integrate end-to-end loop (robot → camera → CV → ML → robot)
+- [ ] **T + A**: Complete end-to-end active learning loop
 - [ ] **Y**: Run pilot experiments, document procedures
 - [ ] **D**: Validate data pipeline with real experimental data
 

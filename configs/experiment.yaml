@@ -1,0 +1,60 @@
+# Example experiment configuration for active learning loop.
+
+# Target color to match (RGB 0-255)
+target_color: [128, 0, 255]
+
+# Volume bounds per dye channel [min, max] in uL  (R, G, B)
+volume_bounds:
+  - [0, 0, 0]
+  - [300, 300, 300]
+
+seed: 42
+
+# Robot connection
+robot:
+  ip: "169.254.8.56"
+  port: 31950
+
+# Labware configuration (passed to protocol.load_labware_from_config)
+labware:
+  pipette:
+    name: "p300_multi_gen2"
+  tiprack:
+    name: "opentrons_96_tiprack_300ul"
+    slot: "1"
+  sources:
+    name: "nest_12_reservoir_15ml"
+    slots: ["4"]
+  imaging:
+    name: "opentrons_96_aluminumblock_generic_pcr_strip_200ul"
+    slot: "5"
+  dispense:
+    name: "corning_96_wellplate_360ul_flat"
+    slot: "10"
+
+# Protocol settings
+settings:
+  imaging_well: "A1"
+  imaging_offset: [0, 0, 50]
+  base_dir: "data"
+
+# Task list for a single experiment round
+tasks:
+  - type: pickup
+    well: "A1"
+    expected_tips: 8
+    conf: 0.6
+
+  - type: transfer
+    source_slot: "4"
+    source_well: "A1"
+    dest_slot: "10"
+    dest_well: "A1"
+    volume: 100
+    origin: "top"
+    offset: [0, 0, -35]
+    expected_tips: 8
+    conf: 0.6
+
+  - type: drop
+    well: "A1"

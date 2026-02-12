@@ -1,9 +1,10 @@
-# Robot control
-opentrons==7.*
+# Robot control (HTTP API via requests, not opentrons SDK)
+requests>=2.31
 
 # Computer vision
 opencv-python>=4.8
 Pillow>=10.0
+super-gradients>=3.7
 
 # Machine learning
 numpy>=1.24
