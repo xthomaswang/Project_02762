@@ -1,19 +1,43 @@
 # ============================================================
 # Experiment Configuration for Active Learning Color Mixing
+# Set-up: laptop controls OT-2 + overhead camera
+#
+# Implementation Plan:
+#   Phase I (controls): Left single-channel dispenses blank + pure RGB + equal-RGB mixtures (Row A wells).
+#   Phase II (active learning): Right 8-channel runs experiments column-wise (placeholder until verified).
+#
+# Image capture is triggered from the laptop after OT-2 dispensing completes.
 # ============================================================
 
-# Target color to match (RGB 0-255)
-target_color: [128, 0, 255]
+metadata:
+  name: "rgb_active_learning_v1"
+  notes:
+    - "Plate is in slot 1."
+    - "Reservoirs: blank(diluent)=3, clean_water(rinsing only)=6, R=7, G=8, B=9."
+    - "Tiprack is in slot 11."
+    - "Controls are single-well in row A (A1–A8). Phase II will be finalized after verification."
 
-# Volume constraint: Vr + Vg + Vb = total_volume_ul
-# Search space is effectively 2D (Vb = total - Vr - Vg)
-volume_bounds:
-  min: [0, 0, 0]
-  max: [300, 300, 300]
-total_volume_ul: 300
+# ============================================================
+# Optimization target + search space
+# ============================================================
+target_color: [128, 0, 255]   # Target color to match (RGB 0–255)
+
+# ============================================================
+# Design
+# ============================================================
+design:
+  total_volume_ul: 200
+  volume_bounds:
+    min: [0, 0, 0]            # [R_ul, G_ul, B_ul]
+    max: [200, 200, 200]
+  step_ul: 10
+  constraint: "R_ul + G_ul + B_ul <= total_volume_ul"
+  derived:
+    diluent_ul: "total_volume_ul - (R_ul + G_ul + B_ul)"
 
 # Convergence threshold — stop if RGB distance < this value
-convergence_threshold: 50
+convergence:
+  rgb_distance_threshold: 50
 
 seed: 42
 
@@ -28,106 +52,163 @@ robot:
 # Pipette configuration
 # ============================================================
 pipettes:
-  right:
-    name: "p300_multi_gen2"       # 8-channel, 20-300 uL
-    mount: "right"
-    # NOTE: Tips at rows A, B, C, D physically removed from tiprack.
-    # 8-channel only picks up 4 tips (E-H), dispensing to experiment rows only.
   left:
-    name: "p300_single_gen2"      # 1-channel, 20-300 uL
+    name: "p300_single_gen2"        # 1-channel, 20–300 uL
     mount: "left"
-    # Used for control dispensing (rows A, B, C)
+    role: "Phase I controls + debugging"
+    notes:
+      - "Used to dispense into single wells for Phase I controls."
+
+  right:
+    name: "p300_multi_gen2"         # 8-channel, 20–300 uL
+    mount: "right"
+    role: "Phase II column-wise experiments"
+    notes:
+      - "Planned for column-wise dispensing in Phase II."
+      - "Partial pickup (E–H only) is nonstandard; verify in a dry run before relying on it."
 
 # ============================================================
 # Deck layout
 #
-#   Back:   [10 empty] [11 empty] [Trash]
-#           [ 7 empty] [ 8 empty] [ 9 empty]
-#           [ 4 dyes ] [ 5 PLATE] [ 6 clean]
-#   Front:  [ 1 tips8] [ 2 tips1] [ 3 empty]
+#   Back:   [10 empty] [11 TipRack] [Trash]
+#           [ 7 R_reservoir] [ 8 G_reservoir] [ 9 B_reservoir]
+#           [ 4 empty ] [ 5 empty ] [ 6 clean reservoir]
+#   Front:  [ 1 96-well] [ 2 empty ] [ 3 blank reservoir]
 # ============================================================
 labware:
   tipracks:
-    # 8-channel tiprack (right pipette) — rows A,B,C tips REMOVED
+    # Single physical tiprack in slot 11 (shared by left + right)
     - name: "opentrons_96_tiprack_300ul"
-      slot: "1"
-      for: "right"
-      # Only rows E-H have tips. 8-channel picks up 4 tips per column.
-      # Column assignment:
-      #   Col 1: Red dye tips   (reused with cleaning)
-      #   Col 2: Green dye tips (reused with cleaning)
-      #   Col 3: Blue dye tips  (reused with cleaning)
-      #   Col 4: Mix tips       (reused with cleaning)
-      tip_columns:
+      slot: "11"
+      for: ["right", "left"]
+      notes:
+        - "Single physical tiprack in slot 11."
+        - "Phase I (left): use dedicated single tips for controls OR use fresh tips."
+        - "Phase II (right): uses reserved tip columns (if reusing tips with cleaning)."
+
+      # Phase II (right pipette) tip plan
+      # Column assignment (optional strategy if reusing tips):
+      #   Col 1: Red dye tips
+      #   Col 2: Green dye tips
+      #   Col 3: Blue dye tips
+      #   Col 4: Mix tips
+      right_tip_columns:
         red: 1
         green: 2
         blue: 3
         mix: 4
-      modified_rows: "E-H only (A,B,C,D removed)"
 
-    # Single-channel tiprack (left pipette) — for controls
-    - name: "opentrons_96_tiprack_300ul"
-      slot: "2"
-      for: "left"
-      # 4 reusable tips for control dispensing:
-      #   A1: Red control tip   (dispenses pure Red into row A)
-      #   B1: Green control tip (dispenses pure Green into row B)
-      #   C1: Blue control tip  (dispenses pure Blue into row C)
-      #   D1: Water control tip (dispenses pure Water into row D)
-      control_tips:
+      # Optional experimental approach (only if you truly remove tips A–D):
+      partial_pickup_experimental:
+        enabled: true
+        modified_rows: "E-H only (A,B,C,D removed)"
+        warning: "Nonstandard for p300_multi_gen2; verify pickup + accuracy in a dry run."
+
+      # Phase I (left pipette) tip plan (optional dedicated reusable tips)
+      left_control_tips:
         red: "A1"
         green: "B1"
         blue: "C1"
-        water: "D1"
+        blank: "D1"
+      left_tip_notes:
+        - "Use 'blank' (slot 3 diluent) as the true baseline."
+        - "Clean water (slot 6) is for rinsing only."
 
+  # ---------- Liquid sources ----------
   sources:
-    name: "nest_12_reservoir_15ml"
-    slot: "4"
-    # Pre-mixed dye solutions (concentration from pilot test):
-    columns:
-      red: "A1"       # Red dye solution
-      green: "A2"     # Green dye solution
-      blue: "A3"      # Blue dye solution
+    red:
+      name: "nest_12_reservoir_15ml"
+      slot: "7"
+      well: "A1"
+      description: "Pre-mixed Red working dye"
 
+    green:
+      name: "nest_12_reservoir_15ml"
+      slot: "8"
+      well: "A1"
+      description: "Pre-mixed Green working dye"
+
+    blue:
+      name: "nest_12_reservoir_15ml"
+      slot: "9"
+      well: "A1"
+      description: "Pre-mixed Blue working dye"
+
+    blank:
+      name: "nest_12_reservoir_15ml"
+      slot: "3"
+      well: "A1"
+      description: "Blank diluent (true baseline + mixture top-up base)"
+
+  # ---------- Cleaning reservoir ----------
   cleaning:
     name: "nest_12_reservoir_15ml"
     slot: "6"
-    # Pure water for tip cleaning:
-    columns:
-      red_rinse: "A1"       # Rinse Red tips here
-      green_rinse: "A2"     # Rinse Green tips here
-      blue_rinse: "A3"      # Rinse Blue tips here
-      mix_rinse: "A4"       # Rinse Mix tips here
-      water_rinse: "A5"     # Rinse Water control tip here
-      control_rinse: "A6"   # General rinse for single-channel
+    description: "Pure water for tip rinsing (NOT the blank diluent)"
+    wells:
+      red_rinse: "A1"
+      green_rinse: "A2"
+      blue_rinse: "A3"
+      mix_rinse: "A4"
+      blank_rinse: "A5"
+      control_rinse: "A6"
 
-  dispense:
+  plate:
     name: "corning_96_wellplate_360ul_flat"
-    slot: "5"         # Center of deck — camera positioned above
+    slot: "1"
+    notes:
+      - "Top-down camera is positioned above slot 1 (plate)."
+
+# Explicit mapping (helps code resolve liquid names without guessing)
+liquids:
+  mapping:
+    blank: { slot: "3", well: "A1" }
+    red:   { slot: "7", well: "A1" }
+    green: { slot: "8", well: "A1" }
+    blue:  { slot: "9", well: "A1" }
+    rinse: { slot: "6", well: "A1" }
 
 # ============================================================
-# Well plate layout (per column)
+# Phase I: Well plate layout for single-well controls (LEFT pipette)
 # ============================================================
-#   Row A: Pure Red control    (300 uL via single-channel)
-#   Row B: Pure Green control  (300 uL via single-channel)
-#   Row C: Pure Blue control   (300 uL via single-channel)
-#   Row D: Pure Water control  (300 uL via single-channel)
-#   Row E: Experimental mix    (Vr+Vg+Vb via 8-channel, 4 tips)
-#   Row F: Experimental mix    (replicate)
-#   Row G: Experimental mix    (replicate)
-#   Row H: Experimental mix    (replicate)
-#
-# Controls: R/G/B calibration + Water baseline (white point).
-# 4 experiment replicates per column for noise estimation.
-
 well_layout:
-  control_rows: ["A", "B", "C", "D"]
-  experiment_rows: ["E", "F", "G", "H"]
+  phase: "phase1_single_well_controls"
   controls:
-    A: { dye: "red",   volume: 300 }   # Pure Red
-    B: { dye: "green", volume: 300 }   # Pure Green
-    C: { dye: "blue",  volume: 300 }   # Pure Blue
-    D: { dye: "water", volume: 300 }   # Pure Water (white baseline)
+    blank:
+      well: "A1"
+      liquid: "blank"
+      volume: 200
+      note: "True blank baseline (diluent only)."
+
+    red_only:
+      well: "A2"
+      liquid: "red"
+      volume: 200
+      note: "Pure red calibration reference."
+
+    green_only:
+      well: "A3"
+      liquid: "green"
+      volume: 200
+      note: "Pure green calibration reference."
+
+    blue_only:
+      well: "A4"
+      liquid: "blue"
+      volume: 200
+      note: "Pure blue calibration reference."
+
+    gray_equal:
+      well: "A5"
+      recipe_ul: { red: 60, green: 60, blue: 60, blank: 20 }
+      total_volume_ul: 200
+      note: "Equal RGB mixture anchor (checks mixing + RGB extraction)."
+
+    gray_repeats:
+      wells: ["A6", "A7", "A8"]
+      recipe_ul: { red: 60, green: 60, blue: 60, blank: 20 }
+      total_volume_ul: 200
+      note: "Repeatability check: same gray recipe in 3 wells."
 
 # ============================================================
 # Camera configuration
@@ -137,141 +218,289 @@ camera:
   width: 1920
   height: 1080
   warmup_frames: 10
-  mount: "fixed_overhead"   # USB webcam fixed above slot 5
+  mount: "fixed_overhead"     # USB webcam fixed above slot 1
 
 # ============================================================
 # Experiment settings
 # ============================================================
 experiment:
-  mode: "column"              # 1 experiment = 1 column
-  n_initial: 5                # Random exploration experiments
-  n_optimization: 7           # GP-guided optimization experiments
-  max_per_plate: 12           # All 12 columns available
-  batch_mode: true            # Pause for plate swap if not converged after 12
-  settle_time_seconds: 45     # Wait after dispensing before imaging
-  mix_cycles: 3               # Aspirate/dispense cycles during mix step
-  mix_volume_ul: 200          # Volume for mixing
+  phase: "phase1"             # phase1 (controls) OR phase2 (column-wise AL)
+
+  phase1:
+    mode: "single_well_controls"
+    settle_time_seconds: 45
+    mix_cycles: 3
+    mix_volume_ul: 150
+    notes:
+      - "Purpose: camera calibration + repeatability (A1–A8)."
+      - "No optimization loop in Phase I."
+
+  phase2:
+    mode: "column"
+    n_initial: 5
+    n_optimization: 7
+    max_per_plate: 12
+    batch_mode: true
+    settle_time_seconds: 45
+    mix_cycles: 3
+    mix_volume_ul: 150
+    notes:
+      - "1 column = 1 experiment; ML proposes (R,G,B) volumes per column."
+      - "Replicate scheme depends on whether partial pickup (E–H) is used."
 
 # ============================================================
 # Tip cleaning settings
 # ============================================================
 cleaning:
-  rinse_cycles: 3             # Aspirate/dispense in clean water 3x
-  rinse_volume_ul: 250        # Volume per rinse cycle
-  blow_out_after: true        # Blow out after final rinse
-  return_tips: true           # Return tips to home position (not trash)
+  enabled: true
+  rinse_cycles: 3
+  rinse_volume_ul: 200
+  blow_out_after: true
+  return_tips: true
+  notes:
+    - "Rinsing uses clean water reservoir in slot 6."
+    - "If not reusing tips, set enabled=false and trash tips in protocol."
 
 # ============================================================
 # ML configuration (Pure RGB — 3 independent GPs)
 # ============================================================
 ml:
-  model: "independent_gp"     # 3 separate GPs: GP_R, GP_G, GP_B
-  acquisition: "EI"           # Expected Improvement (or "UCB")
-  n_replicates: 4             # Average 4 experiment wells (E-H) per column
-  # Each GP maps: (Vr, Vg, Vb) -> predicted channel value
-  # Acquisition minimizes: sqrt((GP_R-tR)^2 + (GP_G-tG)^2 + (GP_B-tB)^2)
-  # Constraint: Vr + Vg + Vb = 300 enforced during optimization
+  phase: "phase2"              # phase1 = calibration only, phase2 = active learning
+
+  phase1:
+    mode: "calibration_only"
+    notes:
+      - "Use blank + pure RGB controls to calibrate camera RGB mapping per run."
+      - "Use gray repeats (A6–A8) to estimate measurement noise."
+
+  phase2:
+    model: "independent_gp"     # 3 separate GPs: GP_R, GP_G, GP_B
+    acquisition: "EI"
+    objective: "min_rgb_distance_to_target"
+    n_replicates: 4
+    input_variables: ["R_ul", "G_ul", "B_ul"]
+    constraint:
+      type: "simplex_with_diluent"
+      expression: "R_ul + G_ul + B_ul <= total_volume_ul"
+      note: "blank_ul is computed as total_volume_ul - (R_ul + G_ul + B_ul)."
+    notes:
+      - "Target RGB is in camera space (0–255)."
+      - "Log mean+std across replicates if replicates are used."
 
 # ============================================================
-# Dispensing protocol per column
-#
-# Phase 1: Controls (single-channel, left pipette)
-# Phase 2: Experimental mix (8-channel with 5 tips, right pipette)
-# Tips reused across all 12 columns with cleaning between.
+# Dispensing protocol templates
 # ============================================================
 protocol_template:
-  # --- Phase 1: Control dispensing (single-channel, left pipette) ---
-  # Dispense pure dye/water into control rows A-D. One tip per control color.
+  phase: "phase1"              # phase1 OR phase2
 
-  - step: 1
-    phase: "control"
-    type: transfer
-    dye: "red"
-    source_well: "A1"          # Red in reservoir
-    dest_row: "A"              # Row A = pure Red
-    pipette: "left"
-    tip_position: "A1"         # Dedicated Red control tip
-    volume: 300
-    post_transfer: [rinse, return]
+  phase1:
+    notes:
+      - "Dispense A1–A8 controls with left single-channel."
+      - "Trigger imaging after dispensing completes."
 
-  - step: 2
-    phase: "control"
-    type: transfer
-    dye: "green"
-    source_well: "A2"
-    dest_row: "B"              # Row B = pure Green
-    pipette: "left"
-    tip_position: "B1"         # Dedicated Green control tip
-    volume: 300
-    post_transfer: [rinse, return]
+    steps:
+      - step: 1
+        phase: "control"
+        type: pickup
+        pipette: "left"
+        description: "Pick up a tip for Phase I control dispensing."
 
-  - step: 3
-    phase: "control"
-    type: transfer
-    dye: "blue"
-    source_well: "A3"
-    dest_row: "C"              # Row C = pure Blue
-    pipette: "left"
-    tip_position: "C1"         # Dedicated Blue control tip
-    volume: 300
-    post_transfer: [rinse, return]
+      - step: 2
+        phase: "control"
+        type: transfer
+        dye: "blank"
+        source_slot: "3"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A1"
+        volume: 200
+        description: "A1 blank baseline (diluent only)."
 
-  - step: 4
-    phase: "control"
-    type: transfer
-    dye: "water"
-    source_well: "A4"          # Water in cleaning reservoir col A4 (or separate source)
-    dest_row: "D"              # Row D = pure Water (white baseline)
-    pipette: "left"
-    tip_position: "D1"         # Dedicated Water control tip
-    volume: 300
-    post_transfer: [rinse, return]
+      - step: 3
+        phase: "control"
+        type: transfer
+        dye: "red"
+        source_slot: "7"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A2"
+        volume: 200
+        description: "A2 pure red."
 
-  # --- Phase 2: Experimental dispensing (8-channel, right, 4 tips E-H) ---
-  # Volumes Vr, Vg, Vb set dynamically by active learning.
+      - step: 4
+        phase: "control"
+        type: transfer
+        dye: "green"
+        source_slot: "8"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A3"
+        volume: 200
+        description: "A3 pure green."
 
-  - step: 5
-    phase: "experiment"
-    type: transfer
-    dye: "red"
-    source_well: "A1"
-    pipette: "right"           # 8-channel (4 tips: E-H)
-    tip_column: 1
-    # volume: Vr (from ML)
-    post_transfer: [rinse, return]
+      - step: 5
+        phase: "control"
+        type: transfer
+        dye: "blue"
+        source_slot: "9"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A4"
+        volume: 200
+        description: "A4 pure blue."
 
-  - step: 6
-    phase: "experiment"
-    type: transfer
-    dye: "green"
-    source_well: "A2"
-    pipette: "right"
-    tip_column: 2
-    # volume: Vg (from ML)
-    post_transfer: [rinse, return]
+      # A5 gray = 60/60/60 + 20 blank
+      - step: 6
+        phase: "control"
+        type: transfer
+        dye: "red"
+        source_slot: "7"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A5"
+        volume: 60
+        description: "A5 gray: add 60 uL red."
 
-  - step: 7
-    phase: "experiment"
-    type: transfer
-    dye: "blue"
-    source_well: "A3"
-    pipette: "right"
-    tip_column: 3
-    # volume: Vb (from ML)
-    post_transfer: [rinse, return]
+      - step: 7
+        phase: "control"
+        type: transfer
+        dye: "green"
+        source_slot: "8"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A5"
+        volume: 60
+        description: "A5 gray: add 60 uL green."
 
-  - step: 8
-    phase: "experiment"
-    type: mix
-    pipette: "right"           # 8-channel (4 tips: E-H)
-    tip_column: 4
-    cycles: 3
-    volume: 200
-    post_mix: [rinse, return]
+      - step: 8
+        phase: "control"
+        type: transfer
+        dye: "blue"
+        source_slot: "9"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A5"
+        volume: 60
+        description: "A5 gray: add 60 uL blue."
 
-  # --- Phase 3: Settle + Image ---
-  # Wait 45s, then capture image of entire plate.
-  # Extract RGB from: controls (A-D) for calibration + experiments (E-H) for GP update.
+      - step: 9
+        phase: "control"
+        type: transfer
+        dye: "blank"
+        source_slot: "3"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_well: "A5"
+        volume: 20
+        description: "A5 gray: top up with 20 uL blank."
+
+      - step: 10
+        phase: "control"
+        type: repeat_recipe
+        wells: ["A6", "A7", "A8"]
+        recipe_ul: { red: 60, green: 60, blue: 60, blank: 20 }
+        description: "A6–A8 repeats of gray recipe."
+
+      - step: 11
+        phase: "control"
+        type: drop
+        pipette: "left"
+        description: "Drop/return tip."
+
+      - step: 12
+        phase: "imaging"
+        type: settle_and_image
+        actor: "laptop"
+        settle_time_seconds: 45
+        description: "Wait then capture image of full plate for calibration."
+
+  phase2:
+    notes:
+      - "Placeholder until Phase II replicate layout is finalized."
+      - "ML proposes R_ul/G_ul/B_ul; blank tops up to total_volume_ul."
+
+    steps:
+      - step: 1
+        phase: "experiment"
+        type: pickup
+        pipette: "right"
+        description: "Pick up tips for column-wise dispensing."
+
+      - step: 2
+        phase: "experiment"
+        type: transfer
+        dye: "red"
+        source_slot: "7"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_wells: ["E6", "F6", "G6", "H6"]   # E–H replicate wells (partial pickup assumption)
+        volume: "R_ul"
+        description: "Dispense red into replicate wells."
+
+      - step: 3
+        phase: "experiment"
+        type: transfer
+        dye: "green"
+        source_slot: "8"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_wells: ["E6", "F6", "G6", "H6"]
+        volume: "G_ul"
+        description: "Dispense green into replicate wells."
+
+      - step: 4
+        phase: "experiment"
+        type: transfer
+        dye: "blue"
+        source_slot: "9"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_wells: ["E6", "F6", "G6", "H6"]
+        volume: "B_ul"
+        description: "Dispense blue into replicate wells."
+
+      - step: 5
+        phase: "experiment"
+        type: transfer
+        dye: "blank"
+        source_slot: "3"
+        source_well: "A1"
+        dest_slot: "1"
+        dest_wells: ["E6", "F6", "G6", "H6"]
+        volume: "diluent_ul"
+        description: "Top up with blank to reach total_volume_ul."
+
+      - step: 6
+        phase: "experiment"
+        type: mix
+        pipette: "right"
+        wells: ["E6", "F6", "G6", "H6"]
+        cycles: 3
+        volume: 150
+        description: "Mix replicate wells after dispensing."
+
+      - step: 7
+        phase: "experiment"
+        type: drop
+        pipette: "right"
+        description: "Drop/return tips."
+
+      - step: 8
+        phase: "imaging"
+        type: settle_and_image
+        actor: "laptop"
+        settle_time_seconds: 45
+        description: "Wait then capture image for ML update."
+
+# ============================================================
+# Imaging plan (notes only)
+# ============================================================
+imaging_plan:
+  notes:
+    - "Wait settle_time_seconds after dispensing so liquid settles."
+    - "Laptop triggers overhead camera capture of the full plate."
+    - "Phase I: extract RGB from A1–A8 controls."
+    - "Phase II: extract RGB from experiment replicate wells; compute mean/std for ML."
 
 # ============================================================
 # Data output
@@ -281,12 +510,12 @@ output:
   save_images: true
   save_predictions: true
   log_format: "csv"
-  # CSV columns: iteration, column, Vr, Vg, Vb,
-  #   ctrl_R, ctrl_G, ctrl_B,       (control RGB values for calibration)
-  #   exp_R, exp_G, exp_B,          (mean of 4 experiment replicates E-H)
-  #   exp_R_std, exp_G_std, exp_B_std, (std across replicates)
-  #   distance, timestamp
+  notes:
+    - "Phase I: log per-well RGB for A1–A8."
+    - "Phase II: log per-experiment proposed volumes + measured RGB mean/std across replicates."
 
 # ============================================================
 # Task
 # ============================================================
+# This YAML defines configuration only.
+# OT-2 protocol execution + camera capture + ML loop are implemented in code.
