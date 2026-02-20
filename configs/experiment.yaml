@@ -239,96 +239,96 @@ ml:
 # ============================================================
 protocol_template:
   phase: "phase1"              # phase1 OR phase2
+  steps:
+    - step: 1
+      phase: "control"
+      type: transfer
+      dye: "red"
+      source_slot: 7             # Red reservoir
+      source_well: "A1"
+      dest_row: "A"              # Row A = pure Red
+      pipette: "left"
+      tip_position: "A1"         # Dedicated Red control tip
+      volume: 200
+      post_transfer: [rinse, return]
 
-  - step: 1
-    phase: "control"
-    type: transfer
-    dye: "red"
-    source_slot: 7             # Red reservoir
-    source_well: "A1"
-    dest_row: "A"              # Row A = pure Red
-    pipette: "left"
-    tip_position: "A1"         # Dedicated Red control tip
-    volume: 200
-    post_transfer: [rinse, return]
+    - step: 2
+      phase: "control"
+      type: transfer
+      dye: "green"
+      source_slot: 8             # Green reservoir
+      source_well: "A1"
+      dest_row: "B"              # Row B = pure Green
+      pipette: "left"
+      tip_position: "B1"         # Dedicated Green control tip
+      volume: 200
+      post_transfer: [rinse, return]
 
-  - step: 2
-    phase: "control"
-    type: transfer
-    dye: "green"
-    source_slot: 8             # Green reservoir
-    source_well: "A1"
-    dest_row: "B"              # Row B = pure Green
-    pipette: "left"
-    tip_position: "B1"         # Dedicated Green control tip
-    volume: 200
-    post_transfer: [rinse, return]
+    - step: 3
+      phase: "control"
+      type: transfer
+      dye: "blue"
+      source_slot: 9             # Blue reservoir
+      source_well: "A1"
+      dest_row: "C"              # Row C = pure Blue
+      pipette: "left"
+      tip_position: "C1"         # Dedicated Blue control tip
+      volume: 200
+      post_transfer: [rinse, return]
 
-  - step: 3
-    phase: "control"
-    type: transfer
-    dye: "blue"
-    source_slot: 9             # Blue reservoir
-    source_well: "A1"
-    dest_row: "C"              # Row C = pure Blue
-    pipette: "left"
-    tip_position: "C1"         # Dedicated Blue control tip
-    volume: 200
-    post_transfer: [rinse, return]
+    - step: 4
+      phase: "control"
+      type: transfer
+      dye: "water"
+      source_slot: 5             # Pure water reservoir
+      source_well: "A1"
+      dest_row: "D"              # Row D = pure Water (white baseline)
+      pipette: "left"
+      tip_position: "D1"         # Dedicated Water control tip
+      volume: 200
+      post_transfer: [rinse, return]
 
-  - step: 4
-    phase: "control"
-    type: transfer
-    dye: "water"
-    source_slot: 5             # Pure water reservoir
-    source_well: "A1"
-    dest_row: "D"              # Row D = pure Water (white baseline)
-    pipette: "left"
-    tip_position: "D1"         # Dedicated Water control tip
-    volume: 200
-    post_transfer: [rinse, return]
+    - step: 5
+      phase: "experiment"
+      type: transfer
+      dye: "red"
+      source_slot: 7             # Red reservoir
+      source_well: "A1"
+      pipette: "right"           # 8-channel (4 tips: E-H)
+      tip_column: 1
+      # volume: Vr (from ML)
+      post_transfer: [rinse, return]
 
-  - step: 5
-    phase: "experiment"
-    type: transfer
-    dye: "red"
-    source_slot: 7             # Red reservoir
-    source_well: "A1"
-    pipette: "right"           # 8-channel (4 tips: E-H)
-    tip_column: 1
-    # volume: Vr (from ML)
-    post_transfer: [rinse, return]
+    - step: 6
+      phase: "experiment"
+      type: transfer
+      dye: "green"
+      source_slot: 8             # Green reservoir
+      source_well: "A1"
+      pipette: "right"
+      tip_column: 2
+      # volume: Vg (from ML)
+      post_transfer: [rinse, return]
 
-  - step: 6
-    phase: "experiment"
-    type: transfer
-    dye: "green"
-    source_slot: 8             # Green reservoir
-    source_well: "A1"
-    pipette: "right"
-    tip_column: 2
-    # volume: Vg (from ML)
-    post_transfer: [rinse, return]
+    - step: 7
+      phase: "experiment"
+      type: transfer
+      dye: "blue"
+      source_slot: 9             # Blue reservoir
+      source_well: "A1"
+      pipette: "right"
+      tip_column: 3
+      # volume: Vb (from ML)
+      post_transfer: [rinse, return]
 
-  - step: 7
-    phase: "experiment"
-    type: transfer
-    dye: "blue"
-    source_slot: 9             # Blue reservoir
-    source_well: "A1"
-    pipette: "right"
-    tip_column: 3
-    # volume: Vb (from ML)
-    post_transfer: [rinse, return]
-
-  - step: 8
-    phase: "experiment"
-    type: mix
-    pipette: "right"           # 8-channel (4 tips: E-H)
-    tip_column: 4
-    cycles: 3
-    volume: 150                # Below 200 uL tip limit
-    post_mix: [rinse, return]
+    - step: 8
+      phase: "experiment"
+      type: mix
+      pipette: "right"           # 8-channel (4 tips: E-H)
+      tip_column: 4
+      cycles: 3
+      volume: 150                # Below 200 uL tip limit
+      post_mix: [rinse, return]
 
 # ============================================================
 # Imaging plan (notes only)
