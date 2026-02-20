@@ -1,12 +1,7 @@
-# Robot control (HTTP API via requests, not opentrons SDK)
-requests>=2.31
+# Robot control (OpenOT2 — local git submodule, install with: pip install -e OpenOT2)
+-e ./OpenOT2
 
-# Computer vision
-opencv-python>=4.8
-Pillow>=10.0
-super-gradients>=3.7
-
-# Machine learning
+# Machine learning (project-specific)
 numpy>=1.24
 scipy>=1.11
 scikit-learn>=1.3

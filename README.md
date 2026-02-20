@@ -10,11 +10,7 @@ This project uses the OT-2 liquid handling robot to automatically mix red, green
 
 ```
 Project_02762/
-├── src/                     # All source code (flat package)
-│   ├── robot.py             # OT-2 control via HTTP API
-│   ├── vision.py            # Camera + YOLO detection + liquid level checks
-│   ├── protocol.py          # Task-based protocol execution
-│   ├── recovery.py          # Config-driven error recovery
+├── src/                     # Project-specific source code
 │   ├── ml.py                # GP surrogate model + acquisition functions
 │   └── pipeline.py          # End-to-end active learning loop
 ├── configs/                 # Experiment configuration files
@@ -27,6 +23,9 @@ Project_02762/
 └── docs/                    # Documentation
     └── TASK_DISTRIBUTION.md
 ```
+
+Robot control, protocol execution, vision, and recovery are provided by the
+[OpenOT2](https://github.com/xthomaswang/OpenOT2) package (installed as a dependency).
 
 ## Setup
 
@@ -50,7 +49,7 @@ pip install -r requirements.txt
 python scripts/run_experiment.py --config configs/experiment.yaml
 
 # Or import modules directly
-python -c "from src.robot import OT2Robot; print('OK')"
+python -c "from openot2 import OT2Client; print('OK')"
 ```
 
 ## Team

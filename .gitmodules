@@ -1,0 +1,3 @@
+[submodule "OpenOT2"]
+	path = OpenOT2
+	url = https://github.com/xthomaswang/OpenOT2.git
