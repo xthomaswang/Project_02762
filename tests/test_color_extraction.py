@@ -29,7 +29,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.color_extraction import (
+from src.vision.extraction import (
     DEFAULT_GRID,
     ROW_LABELS,
     N_ROWS,

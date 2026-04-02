@@ -10,10 +10,10 @@
 # ============================================================
 
 metadata:
-  name: "rgb_active_learning_v1"
+  name: "color_mixing"
   notes:
     - "Plate is in slot 1."
-    - "Reservoirs: blank(diluent)=3, clean_water(rinsing only)=6, R=7, G=8, B=9."
+    - "Reservoirs: R=7, G=8, B=9, water=5, wash=4."
     - "Tiprack is in slot 11."
     - "Controls are single-well in row A (A1–A8). Phase II will be finalized after verification."
 
@@ -30,13 +30,12 @@ volume_bounds:
   max: [200, 200, 200]
 total_volume_ul: 200
 step_ul: 10                    # Volume discretization step
-constraint: "R_ul + G_ul + B_ul <= total_volume_ul"
-derived:
-  diluent_ul: "total_volume_ul - (R_ul + G_ul + B_ul)"
+constraint: "R_ul + G_ul + B_ul == total_volume_ul"
 
 # Convergence threshold — stop if RGB distance < this value
 convergence:
   rgb_distance_threshold: 50
+convergence_threshold: 50   # flat key used by pipeline.py
 
 seed: 42
 
@@ -102,8 +101,7 @@ labware:
         blue: "C1"
         blank: "D1"
       left_tip_notes:
-        - "Use 'blank' (slot 3 diluent) as the true baseline."
-        - "Clean water (slot 6) is for rinsing only."
+        - "Water control tip uses slot 5 (pure water)."
 
   # Each dye has its own reservoir for clean separation
   sources:
@@ -142,14 +140,18 @@ labware:
       water_rinse: "A5"     # Rinse Water control tip here
       control_rinse: "A6"   # General rinse for single-channel
 
-  plate:
+  # Dispense plate (slot 1) — pipeline uses labware.dispense
+  dispense:
     name: "corning_96_wellplate_360ul_flat"
     slot: "1"              # Front of deck — camera positioned above
+
+  plate:
+    name: "corning_96_wellplate_360ul_flat"
+    slot: "1"              # Alias kept for readability
 
 # Explicit mapping (helps code resolve liquid names without guessing)
 liquids:
   mapping:
-    blank: { slot: "3", well: "A1" }
     red:   { slot: "7", well: "A1" }
     green: { slot: "8", well: "A1" }
     blue:  { slot: "9", well: "A1" }
@@ -197,8 +199,8 @@ experiment:
   n_initial: 5                # Random exploration experiments
   n_optimization: 7           # GP-guided optimization experiments
   max_per_plate: 12           # All 12 columns available
-  batch_mode: true            # Pause for plate swap if not converged after 12
-  settle_time_seconds: 45     # Wait after dispensing before imaging
+  batch_mode: False            # Pause for plate swap if not converged after 12
+  settle_time_seconds: 10     # Wait after dispensing before imaging
   mix_cycles: 3               # Aspirate/dispense cycles during mix step
   mix_volume_ul: 150          # Volume for mixing (below 200 uL tip limit)
 
@@ -213,21 +215,24 @@ cleaning:
   return_tips: true           # Return tips to home position (not trash)
 
 # ============================================================
-# ML configuration (Pure RGB — correlated multi-output GP)
+# ML configuration (correlated multi-output GP + CIELAB Delta E)
 # ============================================================
 ml:
   model: "correlated_gp"      # KroneckerMultiTaskGP — learns R/G/B correlations
   # Alternative: "independent_gp" — 3 separate GPs (GP_R, GP_G, GP_B)
-  acquisition: "EI"           # Expected Improvement (or "UCB")
-  objective: "min_rgb_distance_to_target"
+  acquisition: "EI"           # Thompson sampling (or "UCB")
+  distance_metric: "delta_e_lab"  # CIELAB Delta E (perceptually uniform)
+  # Alternative: "rgb_euclidean" — raw RGB Euclidean distance
+  # NOTE: target_color is still specified in RGB; conversion to Lab
+  # is handled internally by the distance function.
+  objective: "min_color_distance_to_target"
   n_replicates: 4             # Average 4 experiment wells (E-H) per column
   input_variables: ["R_ul", "G_ul", "B_ul"]
   constraint:
-    type: "simplex_with_diluent"
-    expression: "R_ul + G_ul + B_ul <= total_volume_ul"
-    note: "blank_ul is computed as total_volume_ul - (R_ul + G_ul + B_ul)."
-  # Maps: (Vr, Vg, Vb) -> predicted (R, G, B)
-  # Acquisition minimizes: sqrt((pred_R-tR)^2 + (pred_G-tG)^2 + (pred_B-tB)^2)
+    type: "simplex"
+    expression: "R_ul + G_ul + B_ul == total_volume_ul"
+  # GP maps: (Vr, Vg, Vb) -> predicted (R, G, B)
+  # Acquisition minimizes: Delta E between predicted RGB and target RGB
   # Constraint: Vr + Vg + Vb = 200 enforced during optimization
 
 # ============================================================
@@ -368,3 +373,26 @@ output:
   notes:
     - "Phase I: log per-row RGB for controls (A–D)."
     - "Phase II: log per-experiment proposed volumes + measured RGB mean/std across replicates."
+
+# ============================================================
+# Calibration (grid + color)
+# ============================================================
+calibration:
+  grid_path: "calibrations/cv_calibration/grid.json"
+  roi_scale: 0.35
+
+# ============================================================
+# Precheck settings
+# ============================================================
+precheck:
+  robot_timeout: 5.0
+  max_camera_id: 10
+
+# ============================================================
+# Imaging park position
+# ============================================================
+imaging:
+  park:
+    slot: "11"            # Tiprack slot — away from plate/camera
+    well: "A1"
+    offset: [0.0, 0.0, 30.0]  # Positive Z keeps pipette above labware

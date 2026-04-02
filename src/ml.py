@@ -14,7 +14,8 @@ subject to the volume constraint Vr + Vg + Vb = total_volume.
 from typing import List, Optional, Tuple
 
 import numpy as np
-from scipy.spatial.distance import euclidean
+
+from src.color.metrics import batch_color_distances
 
 try:
     import torch
@@ -26,15 +27,6 @@ try:
     _BOTORCH_AVAILABLE = True
 except ImportError:
     _BOTORCH_AVAILABLE = False
-
-
-# ======================================================================
-# Color distance
-# ======================================================================
-
-def color_distance(rgb_a: np.ndarray, rgb_b: np.ndarray) -> float:
-    """Euclidean distance between two RGB vectors (each shape (3,))."""
-    return float(euclidean(np.asarray(rgb_a), np.asarray(rgb_b)))
 
 
 # ======================================================================
@@ -282,6 +274,7 @@ class AcquisitionFunction:
         kind: str = "EI",
         target_rgb: Optional[np.ndarray] = None,
         total_volume: float = 200.0,
+        distance_metric: str = "rgb_euclidean",
     ):
         if not _BOTORCH_AVAILABLE:
             raise ImportError("botorch required for AcquisitionFunction")
@@ -290,6 +283,7 @@ class AcquisitionFunction:
         self.kind = kind
         self.target_rgb = np.asarray(target_rgb, dtype=float) if target_rgb is not None else None
         self.total_volume = total_volume
+        self.distance_metric = distance_metric
 
     def suggest(
         self,
@@ -329,10 +323,17 @@ class AcquisitionFunction:
             # Thompson sampling: sample from posterior, minimize distance
             sampled_rgb = mean_rgb + std_rgb * rng.standard_normal(mean_rgb.shape)
             sampled_rgb = np.clip(sampled_rgb, 0, 255)
-            distances = np.sqrt(np.sum((sampled_rgb - self.target_rgb) ** 2, axis=1))
+            distances = batch_color_distances(
+                sampled_rgb, self.target_rgb, self.distance_metric,
+            )
         else:
             # LCB on distance: optimistic about being close to target
-            pred_distances = np.sqrt(np.sum((mean_rgb - self.target_rgb) ** 2, axis=1))
+            mean_rgb_clipped = np.clip(mean_rgb, 0, 255)
+            pred_distances = batch_color_distances(
+                mean_rgb_clipped, self.target_rgb, self.distance_metric,
+            )
+            # NOTE: uncertainty is in RGB space; for delta_e_lab, this is
+            # an approximation since the sRGB→Lab transform is non-linear.
             uncertainty = np.sqrt(np.sum(std_rgb ** 2, axis=1))
             distances = pred_distances - 2.0 * uncertainty
 

@@ -1,0 +1,34 @@
+                                                              
+  你说得对，有几个部分在这个静态 task 格式里没法完整表达：                
+                                                                          
+  需要讨论的问题                                                          
+                                                                          
+  1. ML/BO 部分                                                           
+  
+  静态 steps.json 只能描述一个固定 column 的操作。实际的 active learning  
+  loop 是动态的——每列的 volumes (Vr, Vg, Vb) 由 GP 模型在运行时决定。这个
+  task 文件只能作为模板（一个 column 的协议），不能替代 pipeline.py       
+  的动态循环。                                              
+
+  选择：                                                                  
+  - A) 把 task 当成单列模板 + 文档，实际运行仍用 notebook/pipeline
+  - B) 给 OpenOT2 task 系统加 template 支持，让 pipeline 每轮生成 steps   
+                                                            
+  2. CV/Camera 部分                                                       
+                                                            
+  task 格式没有 capture_image 这个 step kind。实际协议里 Phase 3 是：home 
+  → 等待沉降 → 拍照 → 提取 RGB。目前这部分完全在 Python     
+  端（pipeline.py）处理，不经过 OpenOT2 的 step 系统。                    
+                                                            
+  选择：                                                                  
+  - A) 保持现状——camera 由 Python 控制，task 只管液体操作
+  - B) 给 OpenOT2 加 capture step kind，让整个流程可以在 task 系统里编排  
+                                                            
+  3. 8-channel 的特殊性                                                   
+                                                            
+  右边的 p300_multi_gen2 是 8 通道，但 tiprack slot 11 的 A-D 行 tips     
+  被物理移除了（只有 E-H 有 tips）。task 格式里 dest_well: "A1"
+  实际分配到的是 E1-H1。这个隐含逻辑在 task 文件里看不出来。              
+                                                            
+  你觉得哪种方向更合适？是把 task 当作参考模板，还是想扩展 OpenOT2 的 task
+   系统来支持完整的 active learning 流程？
