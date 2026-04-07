@@ -1,0 +1,655 @@
+{% extends "base.html" %}
+{% block title %}OpenOT2 — Color Mixing Protocol{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .protocol-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .protocol-header h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #e0e6ed;
+    }
+    .protocol-header .controls {
+        display: flex;
+        gap: .5rem;
+        align-items: center;
+    }
+
+    .mode-select {
+        background: #0d1b2e;
+        border: 1px solid #243b5c;
+        border-radius: 6px;
+        color: #e0e6ed;
+        padding: .45rem .75rem;
+        font-size: .9rem;
+    }
+    .mode-select:focus { outline: none; border-color: #4ea8ff; }
+
+    .status-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .stat-card {
+        background: #1a2d4a;
+        border: 1px solid #243b5c;
+        border-radius: 10px;
+        padding: 1.25rem;
+    }
+    .stat-card .label {
+        font-size: .8rem;
+        color: #8899aa;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        margin-bottom: .35rem;
+    }
+    .stat-card .value {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #e0e6ed;
+    }
+    .stat-card .sub {
+        font-size: .8rem;
+        color: #667788;
+        margin-top: .2rem;
+    }
+    .stat-card .value-sm {
+        font-size: 1rem;
+        line-height: 1.35;
+        font-weight: 600;
+    }
+
+    .color-swatch {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: 2px solid #243b5c;
+        vertical-align: middle;
+        margin-right: .5rem;
+    }
+    .color-value {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .protocol-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1100px) { .protocol-grid { grid-template-columns: 1fr; } }
+
+    .panel {
+        background: #1a2d4a;
+        border: 1px solid #243b5c;
+        border-radius: 10px;
+        padding: 1.25rem;
+    }
+    .panel h2 {
+        font-size: 1rem;
+        color: #8899aa;
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+    .chart-wrap {
+        position: relative;
+        height: 260px;
+    }
+
+    .htable {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .85rem;
+    }
+    .htable th {
+        text-align: left;
+        color: #667788;
+        font-weight: 600;
+        padding: .5rem .6rem;
+        border-bottom: 1px solid #243b5c;
+        text-transform: uppercase;
+        font-size: .75rem;
+        letter-spacing: .5px;
+    }
+    .htable td {
+        padding: .45rem .6rem;
+        border-bottom: 1px solid rgba(36, 59, 92, .5);
+        color: #c0c8d0;
+    }
+    .htable tr:hover td {
+        background: rgba(78, 168, 255, .04);
+    }
+    .run-step-active td {
+        background: rgba(78, 168, 255, .10);
+    }
+    .mono-sub {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: .78rem;
+    }
+
+    .loop-state {
+        display: inline-block;
+        padding: .2rem .65rem;
+        border-radius: 20px;
+        font-size: .8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+    }
+    .loop-state-idle      { background: rgba(108, 117, 125, .2); color: #8899aa; }
+    .loop-state-running   { background: rgba(78, 168, 255, .2);  color: #4ea8ff; }
+    .loop-state-pausing   { background: rgba(255, 159, 67, .2);  color: #ff9f43; }
+    .loop-state-paused    { background: rgba(255, 159, 67, .2);  color: #ff9f43; }
+    .loop-state-stopping  { background: rgba(234, 84, 85, .2);   color: #ea5455; }
+    .loop-state-stopped   { background: rgba(234, 84, 85, .2);   color: #ea5455; }
+    .loop-state-converged { background: rgba(40, 199, 111, .2);  color: #28c76f; }
+    .loop-state-completed { background: rgba(40, 199, 111, .2);  color: #28c76f; }
+    .loop-state-failed    { background: rgba(234, 84, 85, .2);   color: #ea5455; }
+
+    .plan-status {
+        font-size: .75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .ps-planned   { color: #667788; }
+    .ps-running   { color: #4ea8ff; }
+    .ps-completed { color: #28c76f; }
+    .ps-failed    { color: #ea5455; }
+    .ps-skipped   { color: #667788; font-style: italic; }
+    .ps-stopped   { color: #ea5455; }
+
+    .error-banner {
+        background: rgba(234, 84, 85, .15);
+        border: 1px solid #ea5455;
+        border-radius: 8px;
+        padding: .75rem 1rem;
+        margin-bottom: 1rem;
+        color: #ea5455;
+        font-size: .9rem;
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="protocol-header">
+    <div>
+        <h1>Color Mixing Protocol</h1>
+        <span class="loop-state loop-state-idle" id="loop-state-badge">idle</span>
+    </div>
+    <div class="controls">
+        <select id="mode-select" class="mode-select">
+            <option value="quick">Quick</option>
+            <option value="full">Full</option>
+        </select>
+        <button class="btn btn-success" id="btn-start" onclick="doStart()">Start</button>
+        <button class="btn btn-warning" id="btn-pause" onclick="doPause()" disabled>Pause</button>
+        <button class="btn btn-success" id="btn-resume" onclick="doResume()" disabled>Resume</button>
+        <button class="btn btn-danger"  id="btn-stop"   onclick="doStop()" disabled>Stop</button>
+        <button class="btn btn-info"    id="btn-home"   onclick="doHome()" disabled>Home</button>
+        <button class="btn btn-secondary" id="btn-reset" onclick="doReset()" disabled>Reset</button>
+    </div>
+</div>
+
+<div class="error-banner" id="error-banner"></div>
+
+<div class="status-cards">
+    <div class="stat-card">
+        <div class="label">Iteration</div>
+        <div class="value" id="card-iteration">0</div>
+        <div class="sub" id="card-max-iter">of --</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Best Delta E</div>
+        <div class="value" id="card-best-de">--</div>
+        <div class="sub" id="card-threshold">threshold: --</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Target RGB</div>
+        <div class="value color-value" id="card-target">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Best Observed RGB</div>
+        <div class="value color-value" id="card-best-rgb">--</div>
+    </div>
+</div>
+
+<div class="panel" style="margin-bottom:1.5rem;">
+    <h2>Current Run</h2>
+    <div class="status-cards" style="margin-bottom:0;">
+        <div class="stat-card">
+            <div class="label">Run Status</div>
+            <div class="value value-sm" id="card-run-status">--</div>
+            <div class="sub" id="card-run-meta">waiting for start</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Step Progress</div>
+            <div class="value" id="card-step-progress">--</div>
+            <div class="sub" id="card-step-kind">--</div>
+        </div>
+        <div class="stat-card" style="grid-column: span 2;">
+            <div class="label">Current Step</div>
+            <div class="value value-sm" id="card-step-name">--</div>
+            <div class="sub" id="card-step-detail">No active run</div>
+        </div>
+    </div>
+</div>
+
+<div class="panel" style="margin-bottom:1.5rem;">
+    <h2>Current Run Steps</h2>
+    <div style="max-height:260px; overflow-y:auto;">
+        <table class="htable">
+            <thead><tr><th>#</th><th>Step</th><th>Kind</th><th>Detail</th><th>Status</th></tr></thead>
+            <tbody id="run-steps-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="protocol-grid">
+    <div class="panel">
+        <h2>Convergence</h2>
+        <div class="chart-wrap"><canvas id="convergence-chart"></canvas></div>
+    </div>
+    <div class="panel">
+        <h2>Run History</h2>
+        <div style="max-height:300px; overflow-y:auto;">
+            <table class="htable">
+                <thead><tr><th>#</th><th>Phase</th><th>Volumes</th><th>Observed</th><th>&Delta;E</th><th>Status</th></tr></thead>
+                <tbody id="history-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="panel" style="margin-bottom:1.5rem;">
+    <h2>Protocol Plan</h2>
+    <div style="max-height:300px; overflow-y:auto;">
+        <table class="htable">
+            <thead><tr><th>#</th><th>Phase</th><th>Col</th><th>Controls</th><th>Volumes</th><th>Status</th></tr></thead>
+            <tbody id="plan-body"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+
+/* ── Chart ─────────────────────────────────────────────── */
+var ctx = document.getElementById('convergence-chart').getContext('2d');
+var chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [
+            {
+                label: 'Delta E',
+                data: [],
+                borderColor: '#4ea8ff',
+                backgroundColor: 'rgba(78,168,255,.1)',
+                fill: true,
+                tension: .3,
+                pointRadius: 4,
+                pointBackgroundColor: '#4ea8ff'
+            },
+            {
+                label: 'Threshold',
+                data: [],
+                borderColor: 'rgba(40,199,111,.5)',
+                borderDash: [6, 4],
+                pointRadius: 0,
+                fill: false
+            }
+        ]
+    },
+    options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            x: {
+                title: { display: true, text: 'Iteration', color: '#8899aa' },
+                ticks: { color: '#667788' },
+                grid:  { color: 'rgba(36,59,92,.4)' }
+            },
+            y: {
+                title: { display: true, text: 'Delta E', color: '#8899aa' },
+                ticks: { color: '#667788' },
+                grid:  { color: 'rgba(36,59,92,.4)' },
+                beginAtZero: true
+            }
+        },
+        plugins: {
+            legend: { labels: { color: '#8899aa' } }
+        }
+    }
+});
+
+/* ── State ─────────────────────────────────────────────── */
+var _lastJson = '';
+
+/* ── Helpers ───────────────────────────────────────────── */
+function swatch(rgb, size) {
+    if (!rgb || rgb.length < 3) return '--';
+    size = size || 18;
+    var r = Math.round(rgb[0]), g = Math.round(rgb[1]), b = Math.round(rgb[2]);
+    return '<span class="color-swatch" style="background:rgb(' + r + ',' + g + ',' + b + ');width:' + size + 'px;height:' + size + 'px;border-radius:4px;"></span> (' + r + ', ' + g + ', ' + b + ')';
+}
+
+function setButtons(state) {
+    var start  = document.getElementById('btn-start');
+    var pause  = document.getElementById('btn-pause');
+    var resume = document.getElementById('btn-resume');
+    var stop   = document.getElementById('btn-stop');
+    var home   = document.getElementById('btn-home');
+    var reset  = document.getElementById('btn-reset');
+
+    // Default: all disabled
+    start.disabled = true;
+    pause.disabled = true;
+    resume.disabled = true;
+    stop.disabled = true;
+    home.disabled = true;
+    reset.disabled = true;
+
+    if (state === 'idle') {
+        start.disabled = false;
+    } else if (state === 'running') {
+        pause.disabled = false;
+        stop.disabled = false;
+    } else if (state === 'pausing') {
+        // all disabled — waiting for safe point
+    } else if (state === 'paused') {
+        resume.disabled = false;
+        stop.disabled = false;
+    } else if (state === 'stopping') {
+        // all disabled
+    } else if (state === 'stopped' || state === 'completed' || state === 'converged') {
+        home.disabled = false;
+        reset.disabled = false;
+        start.disabled = false;
+    } else if (state === 'failed') {
+        home.disabled = false;
+        reset.disabled = false;
+        start.disabled = false;
+    }
+}
+
+/* ── Apply status to DOM ───────────────────────────────── */
+function applyStatus(s) {
+    var json = JSON.stringify(s);
+    if (json === _lastJson) return;
+    _lastJson = json;
+
+    var state = s.state || 'idle';
+
+    // State badge
+    var badge = document.getElementById('loop-state-badge');
+    badge.textContent = state;
+    badge.className = 'loop-state loop-state-' + state;
+
+    // Buttons
+    setButtons(state);
+
+    // Error banner
+    var eb = document.getElementById('error-banner');
+    if (s.error) {
+        eb.textContent = 'Error: ' + s.error;
+        eb.style.display = 'block';
+    } else {
+        eb.style.display = 'none';
+    }
+
+    // Status cards
+    var activeRun = s.active_run || null;
+    var activeIteration = (activeRun && activeRun.iteration != null) ? activeRun.iteration : null;
+    document.getElementById('card-iteration').textContent = (activeIteration != null) ? activeIteration : ((s.iteration != null) ? s.iteration : 0);
+    document.getElementById('card-max-iter').textContent =
+        'completed ' + ((s.iteration != null) ? s.iteration : 0) + ' of ' + ((s.max_iterations != null) ? s.max_iterations : '--');
+    document.getElementById('card-best-de').textContent = (s.best_distance != null) ? s.best_distance.toFixed(1) : '--';
+    document.getElementById('card-threshold').textContent = 'threshold: ' + ((s.convergence_threshold != null) ? s.convergence_threshold : '--');
+
+    var te = document.getElementById('card-target');
+    if (s.target_rgb) te.innerHTML = swatch(s.target_rgb, 28);
+    else te.textContent = '--';
+
+    var be = document.getElementById('card-best-rgb');
+    if (s.best_rgb) be.innerHTML = swatch(s.best_rgb, 28);
+    else be.textContent = '--';
+
+    // Current run / step
+    var runStatus = document.getElementById('card-run-status');
+    var runMeta = document.getElementById('card-run-meta');
+    var stepProgress = document.getElementById('card-step-progress');
+    var stepKind = document.getElementById('card-step-kind');
+    var stepName = document.getElementById('card-step-name');
+    var stepDetail = document.getElementById('card-step-detail');
+    var liveProgress = activeRun && activeRun.live_progress ? activeRun.live_progress : null;
+    if (activeRun) {
+        runStatus.textContent = activeRun.status || '--';
+        var meta = [];
+        if (activeRun.iteration != null) meta.push('iter ' + activeRun.iteration);
+        if (activeRun.phase) meta.push(activeRun.phase);
+        if (activeRun.column != null) meta.push('col ' + activeRun.column);
+        runMeta.textContent = meta.length ? meta.join(' • ') : (activeRun.id || '--');
+        if (activeRun.current_step_number != null && activeRun.total_steps != null) {
+            stepProgress.textContent = activeRun.current_step_number + ' / ' + activeRun.total_steps;
+        } else {
+            stepProgress.textContent = '--';
+        }
+        if (activeRun.current_step) {
+            stepKind.textContent = activeRun.current_step.kind || '--';
+            stepName.textContent = activeRun.current_step.name || '--';
+            var detailText = activeRun.current_step.detail || activeRun.current_step.status || '--';
+            if (liveProgress && liveProgress.action) {
+                var actionText = liveProgress.action;
+                if (liveProgress.cycle != null && liveProgress.total_cycles != null) {
+                    actionText += ' ' + liveProgress.cycle + '/' + liveProgress.total_cycles;
+                }
+                detailText = actionText + ' • ' + (liveProgress.detail || detailText);
+            }
+            stepDetail.textContent = detailText;
+        } else {
+            stepKind.textContent = activeRun.status || '--';
+            stepName.textContent = 'No active step';
+            stepDetail.textContent = activeRun.id || '--';
+        }
+    } else {
+        runStatus.textContent = state;
+        runMeta.textContent = 'waiting for start';
+        stepProgress.textContent = '--';
+        stepKind.textContent = '--';
+        stepName.textContent = 'No active run';
+        stepDetail.textContent = 'Start the protocol to see live step progress';
+    }
+
+    // Current run step table
+    var rsb = document.getElementById('run-steps-body');
+    var stepsHtml = '';
+    var steps = activeRun && activeRun.steps ? activeRun.steps : [];
+    for (var k = 0; k < steps.length; k++) {
+        var stp = steps[k];
+        var rowClass = '';
+        var statusLabel = stp.status || '--';
+        if (
+            activeRun &&
+            activeRun.current_step &&
+            activeRun.current_step.id === stp.id
+        ) {
+            rowClass = ' class="run-step-active"';
+            if (liveProgress && liveProgress.action) {
+                statusLabel = liveProgress.action;
+                if (liveProgress.cycle != null && liveProgress.total_cycles != null) {
+                    statusLabel += ' ' + liveProgress.cycle + '/' + liveProgress.total_cycles;
+                }
+            }
+        }
+        stepsHtml += '<tr' + rowClass + '>'
+            + '<td>' + stp.number + '</td>'
+            + '<td>' + stp.name + '</td>'
+            + '<td>' + stp.kind + '</td>'
+            + '<td><span class="mono-sub">' + (stp.detail || '--') + '</span></td>'
+            + '<td><span class="plan-status ps-' + stp.status + '">' + statusLabel + '</span></td>'
+            + '</tr>';
+    }
+    if (!stepsHtml) {
+        stepsHtml = '<tr><td colspan="5">No active run steps</td></tr>';
+    }
+    rsb.innerHTML = stepsHtml;
+
+    // Convergence chart
+    var h = s.history || [];
+    chart.data.labels = h.map(function(_, i) { return i + 1; });
+    chart.data.datasets[0].data = h.map(function(r) { return r.distance; });
+    if (s.convergence_threshold != null) {
+        chart.data.datasets[1].data = h.map(function() { return s.convergence_threshold; });
+    }
+    chart.update('none');
+
+    // History table
+    var tb = document.getElementById('history-body');
+    var html = '';
+    for (var i = 0; i < h.length; i++) {
+        var row = h[i];
+        var v = (row.volumes) ? row.volumes.map(function(x) { return x.toFixed(0); }).join(' / ') : '--';
+        var obs = swatch(row.observed_rgb);
+        var d = (row.distance != null) ? row.distance.toFixed(1) : '--';
+        var st = row.status || '--';
+        html += '<tr>'
+            + '<td>' + row.iteration + '</td>'
+            + '<td>' + row.phase + '</td>'
+            + '<td>' + v + '</td>'
+            + '<td>' + obs + '</td>'
+            + '<td>' + d + '</td>'
+            + '<td><span class="plan-status ps-' + st + '">' + st + '</span></td>'
+            + '</tr>';
+    }
+    tb.innerHTML = html;
+
+    // Plan table
+    var plan = s.plan;
+    var pb = document.getElementById('plan-body');
+    var ph = '';
+    if (plan && plan.iterations) {
+        for (var j = 0; j < plan.iterations.length; j++) {
+            var it = plan.iterations[j];
+            var vt = it.volumes
+                ? it.volumes.map(function(x) { return x.toFixed(0); }).join(' / ')
+                : '<em>from GP</em>';
+            var ctrl = it.skip_controls ? 'skip' : 'yes';
+            var statusText = it.status;
+            if (
+                activeRun &&
+                activeRun.iteration === it.iteration &&
+                activeRun.current_step_number != null &&
+                activeRun.total_steps != null &&
+                it.status === 'running'
+            ) {
+                statusText += ' (' + activeRun.current_step_number + '/' + activeRun.total_steps + ')';
+                if (liveProgress && liveProgress.action) {
+                    statusText += ' • ' + liveProgress.action;
+                }
+            }
+            ph += '<tr>'
+                + '<td>' + it.iteration + '</td>'
+                + '<td>' + it.phase + '</td>'
+                + '<td>' + it.column + '</td>'
+                + '<td>' + ctrl + '</td>'
+                + '<td>' + vt + '</td>'
+                + '<td><span class="plan-status ps-' + it.status + '">' + statusText + '</span></td>'
+                + '</tr>';
+        }
+    }
+    pb.innerHTML = ph;
+}
+
+/* ── API calls ─────────────────────────────────────────── */
+async function apiPost(url, body) {
+    try {
+        var r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {})
+        });
+        var data = await r.json();
+        if (!r.ok) return { ok: false, error: data.detail || data.error || 'Request failed' };
+        return data;
+    } catch (e) {
+        return { ok: false, error: e.message || 'Network error' };
+    }
+}
+
+window.doStart = async function() {
+    var mode = document.getElementById('mode-select').value;
+    var d = await apiPost('/protocol/start', { mode: mode });
+    if (d && d.status === 'started') pollNow();
+    else if (d && d.error) alert(d.error);
+};
+
+window.doPause = async function() {
+    await apiPost('/protocol/pause');
+    pollNow();
+};
+
+window.doResume = async function() {
+    await apiPost('/protocol/resume');
+    pollNow();
+};
+
+window.doStop = async function() {
+    await apiPost('/protocol/stop');
+    pollNow();
+};
+
+window.doHome = async function() {
+    var d = await apiPost('/protocol/home');
+    if (d && !d.ok && d.error) alert(d.error);
+    pollNow();
+};
+
+window.doReset = async function() {
+    var d = await apiPost('/protocol/reset');
+    if (d && !d.ok && d.error) alert(d.error);
+    pollNow();
+};
+
+/* ── Polling ───────────────────────────────────────────── */
+async function pollNow() {
+    try {
+        var r = await fetch('/protocol/status');
+        if (r.ok) applyStatus(await r.json());
+    } catch (e) {}
+}
+
+/* ── Mode change → plan preview ────────────────────────── */
+document.getElementById('mode-select').addEventListener('change', async function() {
+    try {
+        var r = await fetch('/protocol/plan?mode=' + this.value);
+        if (r.ok) {
+            var p = await r.json();
+            var s = JSON.parse(_lastJson || '{}');
+            s.plan = p;
+            applyStatus(s);
+        }
+    } catch (e) {}
+});
+
+/* ── Init ──────────────────────────────────────────────── */
+setButtons('idle');
+pollNow();
+setInterval(pollNow, 1000);
+
+})();
+</script>
+{% endblock %}

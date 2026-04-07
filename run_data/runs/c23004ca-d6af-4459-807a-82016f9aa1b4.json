@@ -1,0 +1,295 @@
+{
+  "id": "c23004ca-d6af-4459-807a-82016f9aa1b4",
+  "name": "Iteration 4 [random] col 4",
+  "status": "paused",
+  "steps": [
+    {
+      "id": "db59787f-afea-446a-b9f0-1e97c9a3df5b",
+      "name": "Select right pipette",
+      "kind": "use_pipette",
+      "params": {
+        "mount": "right"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:58:01.265488Z",
+      "finished_at": "2026-04-02T16:58:01.265727Z",
+      "duration_seconds": 0.000239,
+      "output": {
+        "active_pipette": "right"
+      },
+      "error": null
+    },
+    {
+      "id": "bc671278-d371-4cf1-b67d-f09f82e60f43",
+      "name": "Exp: Red 95uL -> col4",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "7",
+        "dest_slot": "1",
+        "tip_well": "A1",
+        "source_well": "A1",
+        "dest_well": "A4",
+        "volume": 94.88222915974755,
+        "cleaning_slot": "4",
+        "rinse_well": "A1",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:58:01.266001Z",
+      "finished_at": "2026-04-02T16:58:39.561254Z",
+      "duration_seconds": 38.295253,
+      "output": {
+        "transferred": 94.88222915974755,
+        "to": "A4"
+      },
+      "error": null
+    },
+    {
+      "id": "80d01535-159e-461e-8bde-467a953be228",
+      "name": "Exp: Green 6uL -> col4",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "8",
+        "dest_slot": "1",
+        "tip_well": "A2",
+        "source_well": "A1",
+        "dest_well": "A4",
+        "volume": 6.385824412245755,
+        "cleaning_slot": "4",
+        "rinse_well": "A2",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:58:39.562916Z",
+      "finished_at": "2026-04-02T16:59:14.929899Z",
+      "duration_seconds": 35.366983,
+      "output": {
+        "transferred": 6.385824412245755,
+        "to": "A4"
+      },
+      "error": null
+    },
+    {
+      "id": "9155d78d-bd26-46c9-80e6-68ecc518fdf4",
+      "name": "Exp: Blue 99uL -> col4",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "9",
+        "dest_slot": "1",
+        "tip_well": "A3",
+        "source_well": "A1",
+        "dest_well": "A4",
+        "volume": 98.73194642800667,
+        "cleaning_slot": "4",
+        "rinse_well": "A3",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:59:14.936216Z",
+      "finished_at": "2026-04-02T16:59:51.772361Z",
+      "duration_seconds": 36.836145,
+      "output": {
+        "transferred": 98.73194642800667,
+        "to": "A4"
+      },
+      "error": null
+    },
+    {
+      "id": "0533f11a-43db-4699-ad7b-f501b4fb7517",
+      "name": "Mix col4",
+      "kind": "mix",
+      "params": {
+        "tiprack_slot": "11",
+        "plate_slot": "1",
+        "tip_well": "A4",
+        "mix_well": "A4",
+        "cycles": 2,
+        "volume": 150,
+        "cleaning_slot": "4",
+        "rinse_well": "A4",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "315a063a-338d-4003-a310-dc03d79709bd",
+      "name": "Home for imaging",
+      "kind": "home",
+      "params": {},
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "371f04f7-a949-4b5a-92ce-232caa344287",
+      "name": "Settle 10s",
+      "kind": "wait",
+      "params": {
+        "seconds": 10
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "340b5467-ba45-4c7b-8dcc-be9571584459",
+      "name": "Capture col4",
+      "kind": "capture",
+      "params": {
+        "label": "col4_iter4"
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "7140135f-36ce-4406-ad55-47f3860927e0",
+      "name": "Extract RGB col4",
+      "kind": "extract_rgb",
+      "params": {
+        "image_path": "",
+        "col": 3,
+        "grid_path": "calibrations/cv_calibration/grid.json",
+        "cached_reference": {
+          "roles": {
+            "D1": "water",
+            "A1": "red",
+            "B1": "green",
+            "C1": "blue"
+          },
+          "white_scale": [
+            2.1796201775759187,
+            2.046604238460468,
+            2.0008202460738223
+          ],
+          "channel_scales": null,
+          "source_column": 1,
+          "water_rgb": [
+            116.99286078531362,
+            124.59663437021928,
+            127.44773074961755
+          ]
+        },
+        "skip_controls": true
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "d4a0cf63-6a13-4fe3-88e9-0b970dd0c43f",
+      "name": "Fit GP iter4",
+      "kind": "fit_gp",
+      "params": {
+        "volumes": [
+          94.88222915974755,
+          6.385824412245755,
+          98.73194642800667
+        ],
+        "observed_rgb": [],
+        "target_rgb": [
+          128.0,
+          0.0,
+          255.0
+        ],
+        "distance_metric": "delta_e_lab",
+        "convergence_threshold": 50.0,
+        "iteration": 3,
+        "all_X": [
+          [
+            67.48504886272909,
+            65.57578773149811,
+            66.93916340577285
+          ],
+          [
+            30.7653514642652,
+            9.50440047503597,
+            159.73024806069884
+          ],
+          [
+            61.122581747275106,
+            135.43997062090583,
+            3.437447631819012
+          ]
+        ],
+        "all_Y": [
+          [
+            154.13643684373406,
+            139.99409619619047,
+            156.33691107332203
+          ],
+          [
+            104.48061005217437,
+            95.14257123445778,
+            139.0366009802941
+          ],
+          [
+            168.3364789057767,
+            105.17025362823023,
+            120.22904371311395
+          ]
+        ],
+        "all_dist": [
+          115.97543047169624,
+          98.84143921139068,
+          111.23783578323638
+        ]
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    }
+  ],
+  "current_step_index": 4,
+  "created_at": "2026-04-02T16:58:01.264124Z",
+  "updated_at": "2026-04-02T16:59:51.775421Z",
+  "metadata": {
+    "iteration": 3,
+    "phase": "random",
+    "col_idx": 3,
+    "volumes": [
+      94.88222915974755,
+      6.385824412245755,
+      98.73194642800667
+    ]
+  },
+  "sequence_id": "3ad24be5-e727-4b40-9834-a7eb69c26db7",
+  "eta_seconds": 216.60938399999998
+}

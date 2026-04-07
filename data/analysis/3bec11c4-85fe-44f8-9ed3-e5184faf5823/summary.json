@@ -1,0 +1,16 @@
+{
+  "sequence_id": "3bec11c4-85fe-44f8-9ed3-e5184faf5823",
+  "state": "failed",
+  "target_rgb": [
+    128,
+    0,
+    255
+  ],
+  "best_distance": null,
+  "best_iteration": null,
+  "best_rgb": null,
+  "converged": false,
+  "total_iterations_run": 0,
+  "distances": [],
+  "error": "No image captured at iteration 1"
+}

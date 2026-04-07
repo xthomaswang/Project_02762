@@ -1,0 +1,28 @@
+{
+  "id": "fbac106f-66ac-45a9-9a2a-4ed47fdcecb5",
+  "name": "manual_home",
+  "status": "completed",
+  "steps": [
+    {
+      "id": "cb79f218-b039-45a4-a26e-2cec444c51ee",
+      "name": "Home",
+      "kind": "home",
+      "params": {},
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T17:17:36.878538Z",
+      "finished_at": "2026-04-02T17:18:00.321057Z",
+      "duration_seconds": 23.442519,
+      "output": {
+        "action": "home"
+      },
+      "error": null
+    }
+  ],
+  "current_step_index": 1,
+  "created_at": "2026-04-02T17:17:36.877443Z",
+  "updated_at": "2026-04-02T17:18:00.323129Z",
+  "metadata": {},
+  "sequence_id": null,
+  "eta_seconds": 0.0
+}

@@ -1,0 +1,2 @@
+iteration,phase,column,volumes,observed_rgb,distance,run_id,status,used_calibration,error
+1,random,1,"[67.5, 65.6, 66.9]",,,99967fef-6fbe-4707-a7c7-ae2873283f53,failed,False,No image captured at iteration 1

@@ -1,0 +1,336 @@
+{
+  "id": "54c79196-5502-4a16-8c13-3ff0e6d774ef",
+  "name": "Iteration 2 [random] col 2",
+  "status": "completed",
+  "steps": [
+    {
+      "id": "5486b7b5-350a-4318-a058-6cf8ec56f53c",
+      "name": "Select right pipette",
+      "kind": "use_pipette",
+      "params": {
+        "mount": "right"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:51:51.631057Z",
+      "finished_at": "2026-04-02T16:51:51.631324Z",
+      "duration_seconds": 0.000267,
+      "output": {
+        "active_pipette": "right"
+      },
+      "error": null
+    },
+    {
+      "id": "be552d09-5476-4127-baeb-f43b569c4510",
+      "name": "Exp: Red 31uL -> col2",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "7",
+        "dest_slot": "1",
+        "tip_well": "A1",
+        "source_well": "A1",
+        "dest_well": "A2",
+        "volume": 30.7653514642652,
+        "cleaning_slot": "4",
+        "rinse_well": "A1",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:51:51.631582Z",
+      "finished_at": "2026-04-02T16:52:28.428004Z",
+      "duration_seconds": 36.796422,
+      "output": {
+        "transferred": 30.7653514642652,
+        "to": "A2"
+      },
+      "error": null
+    },
+    {
+      "id": "5b536187-1814-4edb-97c9-d2a1854e0f8e",
+      "name": "Exp: Green 10uL -> col2",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "8",
+        "dest_slot": "1",
+        "tip_well": "A2",
+        "source_well": "A1",
+        "dest_well": "A2",
+        "volume": 9.50440047503597,
+        "cleaning_slot": "4",
+        "rinse_well": "A2",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:52:28.432796Z",
+      "finished_at": "2026-04-02T16:53:03.595573Z",
+      "duration_seconds": 35.162777,
+      "output": {
+        "transferred": 9.50440047503597,
+        "to": "A2"
+      },
+      "error": null
+    },
+    {
+      "id": "d37e028e-62fe-4d9c-a8d6-20c5e73ab414",
+      "name": "Exp: Blue 160uL -> col2",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "9",
+        "dest_slot": "1",
+        "tip_well": "A3",
+        "source_well": "A1",
+        "dest_well": "A2",
+        "volume": 159.73024806069884,
+        "cleaning_slot": "4",
+        "rinse_well": "A3",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:53:03.601363Z",
+      "finished_at": "2026-04-02T16:53:40.958947Z",
+      "duration_seconds": 37.357584,
+      "output": {
+        "transferred": 159.73024806069884,
+        "to": "A2"
+      },
+      "error": null
+    },
+    {
+      "id": "b9bb086a-9291-481d-809e-1adfb38dd4c2",
+      "name": "Mix col2",
+      "kind": "mix",
+      "params": {
+        "tiprack_slot": "11",
+        "plate_slot": "1",
+        "tip_well": "A4",
+        "mix_well": "A2",
+        "cycles": 2,
+        "volume": 150,
+        "cleaning_slot": "4",
+        "rinse_well": "A4",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:53:40.963767Z",
+      "finished_at": "2026-04-02T16:54:19.241454Z",
+      "duration_seconds": 38.277687,
+      "output": {
+        "mixed": "A2",
+        "cycles": 2
+      },
+      "error": null
+    },
+    {
+      "id": "6fbe917e-ade1-4445-a672-2d7eee5ceefb",
+      "name": "Home for imaging",
+      "kind": "home",
+      "params": {},
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:54:19.246818Z",
+      "finished_at": "2026-04-02T16:54:42.699602Z",
+      "duration_seconds": 23.452784,
+      "output": {
+        "action": "home"
+      },
+      "error": null
+    },
+    {
+      "id": "4d25b2d3-4aa3-4dd9-9325-cff569adbf82",
+      "name": "Settle 10s",
+      "kind": "wait",
+      "params": {
+        "seconds": 10
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:54:42.703833Z",
+      "finished_at": "2026-04-02T16:54:52.710507Z",
+      "duration_seconds": 10.006674,
+      "output": {
+        "waited": 10
+      },
+      "error": null
+    },
+    {
+      "id": "4f97bbb9-ce41-46a3-9997-4c2d0ed20ddd",
+      "name": "Capture col2",
+      "kind": "capture",
+      "params": {
+        "label": "col2_iter2"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:54:52.714662Z",
+      "finished_at": "2026-04-02T16:54:54.871436Z",
+      "duration_seconds": 2.156774,
+      "output": {
+        "ok": true,
+        "image_path": "captures/col2_iter2_20260402_125454.jpg",
+        "width": 1920,
+        "height": 1080
+      },
+      "error": null
+    },
+    {
+      "id": "c1fb6562-2145-4866-a479-5cd51efb2b6d",
+      "name": "Extract RGB col2",
+      "kind": "extract_rgb",
+      "params": {
+        "image_path": "",
+        "col": 1,
+        "grid_path": "calibrations/cv_calibration/grid.json",
+        "cached_reference": {
+          "roles": {
+            "D1": "water",
+            "A1": "red",
+            "B1": "green",
+            "C1": "blue"
+          },
+          "white_scale": [
+            2.1796201775759187,
+            2.046604238460468,
+            2.0008202460738223
+          ],
+          "channel_scales": null,
+          "source_column": 1,
+          "water_rgb": [
+            116.99286078531362,
+            124.59663437021928,
+            127.44773074961755
+          ]
+        },
+        "skip_controls": true
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:54:54.872175Z",
+      "finished_at": "2026-04-02T16:54:54.872707Z",
+      "duration_seconds": 0.000532,
+      "output": {
+        "mean_rgb": [
+          104.48061005217437,
+          95.14257123445778,
+          139.0366009802941
+        ],
+        "std_rgb": [
+          72.79574884833409,
+          76.41897231063851,
+          54.619678426108386
+        ],
+        "raw_mean_rgb": [
+          47.935237123916366,
+          46.488016318205,
+          69.4898011218766
+        ],
+        "used_calibration": true,
+        "runtime_reference": null
+      },
+      "error": null
+    },
+    {
+      "id": "253d5cd6-d32f-4cca-81e3-b39f7e703d1e",
+      "name": "Fit GP iter2",
+      "kind": "fit_gp",
+      "params": {
+        "volumes": [
+          30.7653514642652,
+          9.50440047503597,
+          159.73024806069884
+        ],
+        "observed_rgb": [],
+        "target_rgb": [
+          128.0,
+          0.0,
+          255.0
+        ],
+        "distance_metric": "delta_e_lab",
+        "convergence_threshold": 50.0,
+        "iteration": 1,
+        "all_X": [
+          [
+            67.48504886272909,
+            65.57578773149811,
+            66.93916340577285
+          ]
+        ],
+        "all_Y": [
+          [
+            154.13643684373406,
+            139.99409619619047,
+            156.33691107332203
+          ]
+        ],
+        "all_dist": [
+          115.97543047169624
+        ]
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-02T16:54:54.873106Z",
+      "finished_at": "2026-04-02T16:54:54.873692Z",
+      "duration_seconds": 0.000586,
+      "output": {
+        "distance": 98.84143921139068,
+        "converged": false,
+        "best_distance": 98.84143921139068,
+        "best_iteration": 2,
+        "all_X": [
+          [
+            67.48504886272909,
+            65.57578773149811,
+            66.93916340577285
+          ],
+          [
+            30.7653514642652,
+            9.50440047503597,
+            159.73024806069884
+          ]
+        ],
+        "all_Y": [
+          [
+            154.13643684373406,
+            139.99409619619047,
+            156.33691107332203
+          ],
+          [
+            104.48061005217437,
+            95.14257123445778,
+            139.0366009802941
+          ]
+        ],
+        "all_dist": [
+          115.97543047169624,
+          98.84143921139068
+        ]
+      },
+      "error": null
+    }
+  ],
+  "current_step_index": 10,
+  "created_at": "2026-04-02T16:51:51.629426Z",
+  "updated_at": "2026-04-02T16:54:54.874312Z",
+  "metadata": {
+    "iteration": 1,
+    "phase": "random",
+    "col_idx": 1,
+    "volumes": [
+      30.7653514642652,
+      9.50440047503597,
+      159.73024806069884
+    ]
+  },
+  "sequence_id": "3ad24be5-e727-4b40-9834-a7eb69c26db7",
+  "eta_seconds": 0.0
+}

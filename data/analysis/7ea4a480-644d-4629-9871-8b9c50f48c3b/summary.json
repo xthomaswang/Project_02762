@@ -1,0 +1,16 @@
+{
+  "sequence_id": "7ea4a480-644d-4629-9871-8b9c50f48c3b",
+  "state": "failed",
+  "target_rgb": [
+    128,
+    0,
+    255
+  ],
+  "best_distance": null,
+  "best_iteration": null,
+  "best_rgb": null,
+  "converged": false,
+  "total_iterations_run": 0,
+  "distances": [],
+  "error": "Run failed at iteration 1: No handler registered for step kind 'use_pipette'"
+}
