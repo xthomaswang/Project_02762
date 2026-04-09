@@ -1,0 +1,22 @@
+{
+  "sequence_id": "73b047d2-0c12-4692-a425-81b2936f92b4",
+  "state": "converged",
+  "target_rgb": [
+    128,
+    0,
+    255
+  ],
+  "best_distance": 35.47853583475961,
+  "best_iteration": 1,
+  "best_rgb": [
+    76.25258974685653,
+    58.17873871171486,
+    94.1493135387243
+  ],
+  "converged": true,
+  "total_iterations_run": 1,
+  "distances": [
+    35.47853583475961
+  ],
+  "error": null
+}

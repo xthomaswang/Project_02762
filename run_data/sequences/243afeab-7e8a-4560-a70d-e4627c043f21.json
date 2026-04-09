@@ -1,0 +1,13 @@
+{
+  "id": "243afeab-7e8a-4560-a70d-e4627c043f21",
+  "name": "color_mixing_quick_20260407_115158",
+  "status": "stopped",
+  "run_ids": [
+    "3eb14264-1931-48a7-897e-7c05a037ae87",
+    "2bb5369d-8e60-41b8-9500-1dd27a4d4aba",
+    "830a77d2-77ab-4ade-bb16-d8a6cfcdbff3"
+  ],
+  "created_at": "2026-04-07T15:51:58.425089Z",
+  "updated_at": "2026-04-07T15:51:58.425091Z",
+  "metadata": {}
+}

@@ -1,0 +1,2 @@
+iteration,phase,column,volumes,observed_rgb,distance,run_id,status,used_calibration
+1,random,2,"[67.5, 65.6, 66.9]","[76.0, 58.0, 94.0]",35.5,47a9a1d4-6c6e-4d66-a196-1ccd22fad657,completed,True

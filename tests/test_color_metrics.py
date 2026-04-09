@@ -8,6 +8,10 @@ from src.color.metrics import (
     srgb_to_lab,
     color_distance,
     batch_color_distances,
+    srgb_to_linear,
+    linear_to_srgb,
+    predict_mix_rgb,
+    compute_reachable_gamut,
 )
 
 
@@ -115,6 +119,85 @@ class TestBatchColorDistances(unittest.TestCase):
         target = np.array([100, 100, 100], dtype=float)
         with self.assertRaises(ValueError):
             batch_color_distances(batch, target, "bad")
+
+
+class TestLinearRGBConversion(unittest.TestCase):
+    """Test srgb_to_linear and linear_to_srgb round-trip."""
+
+    def test_white_roundtrip(self):
+        linear = srgb_to_linear(np.array([255, 255, 255]))
+        np.testing.assert_allclose(linear, [1, 1, 1], atol=0.01)
+        back = linear_to_srgb(linear)
+        np.testing.assert_allclose(back, [255, 255, 255], atol=1)
+
+    def test_black_roundtrip(self):
+        linear = srgb_to_linear(np.array([0, 0, 0]))
+        np.testing.assert_allclose(linear, [0, 0, 0], atol=0.01)
+        back = linear_to_srgb(linear)
+        np.testing.assert_allclose(back, [0, 0, 0], atol=1)
+
+    def test_mid_gray_roundtrip(self):
+        rgb = np.array([128, 128, 128])
+        back = linear_to_srgb(srgb_to_linear(rgb))
+        np.testing.assert_allclose(back, rgb, atol=1)
+
+    def test_batch_roundtrip(self):
+        rgb = np.array([[0, 0, 0], [128, 128, 128], [255, 255, 255]], dtype=float)
+        back = linear_to_srgb(srgb_to_linear(rgb))
+        np.testing.assert_allclose(back, rgb, atol=1)
+
+
+class TestPredictMixRGB(unittest.TestCase):
+    """Test predict_mix_rgb mixing model."""
+
+    def test_pure_water(self):
+        pure = {"red": np.array([200, 30, 30]), "green": np.array([30, 200, 30]), "blue": np.array([30, 30, 200])}
+        # fractions = [0, 0, 0] → 100% water
+        result = predict_mix_rgb(pure, np.array([0, 0, 0]), np.array([240, 240, 240]))
+        np.testing.assert_allclose(result, [240, 240, 240], atol=2)
+
+    def test_pure_red(self):
+        pure = {"red": np.array([200, 30, 30]), "green": np.array([30, 200, 30]), "blue": np.array([30, 30, 200])}
+        result = predict_mix_rgb(pure, np.array([1, 0, 0]))
+        np.testing.assert_allclose(result, [200, 30, 30], atol=5)
+
+    def test_equal_mix(self):
+        pure = {"red": np.array([200, 30, 30]), "green": np.array([30, 200, 30]), "blue": np.array([30, 30, 200])}
+        result = predict_mix_rgb(pure, np.array([0.33, 0.33, 0.34]))
+        # Should be roughly grayish
+        self.assertTrue(np.std(result) < 50)
+
+
+class TestComputeReachableGamut(unittest.TestCase):
+    """Test compute_reachable_gamut."""
+
+    def test_returns_required_keys(self):
+        pure = {"red": np.array([200, 30, 30]), "green": np.array([30, 200, 30]), "blue": np.array([30, 30, 200])}
+        result = compute_reachable_gamut(pure, n_samples=100)
+        self.assertIn("samples_rgb", result)
+        self.assertIn("samples_lab", result)
+        self.assertIn("suggested_targets", result)
+        self.assertIn("pure_rgbs", result)
+
+    def test_samples_count(self):
+        pure = {"red": np.array([200, 30, 30]), "green": np.array([30, 200, 30]), "blue": np.array([30, 30, 200])}
+        result = compute_reachable_gamut(pure, n_samples=500)
+        self.assertEqual(len(result["samples_rgb"]), 500)
+
+    def test_suggested_targets_exist(self):
+        pure = {"red": np.array([200, 30, 30]), "green": np.array([30, 200, 30]), "blue": np.array([30, 30, 200])}
+        result = compute_reachable_gamut(pure, n_samples=1000)
+        self.assertGreater(len(result["suggested_targets"]), 0)
+        for t in result["suggested_targets"]:
+            self.assertIn("rgb", t)
+            self.assertEqual(len(t["rgb"]), 3)
+
+    def test_samples_in_valid_range(self):
+        pure = {"red": np.array([200, 30, 30]), "green": np.array([30, 200, 30]), "blue": np.array([30, 30, 200])}
+        result = compute_reachable_gamut(pure, n_samples=200)
+        rgb = np.array(result["samples_rgb"])
+        self.assertTrue(np.all(rgb >= 0))
+        self.assertTrue(np.all(rgb <= 255))
 
 
 if __name__ == "__main__":

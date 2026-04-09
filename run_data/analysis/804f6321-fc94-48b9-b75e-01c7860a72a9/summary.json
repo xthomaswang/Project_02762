@@ -1,0 +1,16 @@
+{
+  "sequence_id": "804f6321-fc94-48b9-b75e-01c7860a72a9",
+  "state": "stopped",
+  "target_rgb": [
+    128,
+    0,
+    255
+  ],
+  "best_distance": null,
+  "best_iteration": null,
+  "best_rgb": null,
+  "converged": false,
+  "total_iterations_run": 0,
+  "distances": [],
+  "error": null
+}

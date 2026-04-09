@@ -147,6 +147,7 @@
         letter-spacing: .5px;
     }
     .loop-state-idle      { background: rgba(108, 117, 125, .2); color: #8899aa; }
+    .loop-state-calibrating { background: rgba(224, 168, 48, .2); color: #e0a830; }
     .loop-state-running   { background: rgba(78, 168, 255, .2);  color: #4ea8ff; }
     .loop-state-pausing   { background: rgba(255, 159, 67, .2);  color: #ff9f43; }
     .loop-state-paused    { background: rgba(255, 159, 67, .2);  color: #ff9f43; }
@@ -168,6 +169,36 @@
     .ps-skipped   { color: #667788; font-style: italic; }
     .ps-stopped   { color: #ea5455; }
 
+    /* ---- Protocol buttons — uniform size ---- */
+    .controls .btn {
+        padding: .4rem .65rem;
+        font-size: .78rem;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        line-height: 1.3;
+        white-space: nowrap;
+    }
+    /* ---- Protocol button colors ---- */
+    .btn-tipcheck  { background: #7c5cfc; }
+    .btn-tipcheck:hover:not(:disabled) { background: #6a4be0; }
+    .btn-calibrate { background: #e0a830; color: #1a1a1a; }
+    .btn-calibrate:hover:not(:disabled) { background: #c99425; }
+    .btn-start     { background: #28c76f; }
+    .btn-start:hover:not(:disabled) { background: #1fa85c; }
+    .btn-pause     { background: #ff9f43; color: #1a1a1a; }
+    .btn-pause:hover:not(:disabled) { background: #e08a30; }
+    .btn-resume    { background: #28c76f; }
+    .btn-resume:hover:not(:disabled) { background: #1fa85c; }
+    .btn-stop      { background: #ea5455; font-weight: 700; letter-spacing: .5px; }
+    .btn-stop:hover:not(:disabled) { background: #d03e3f; }
+    .btn-stop:disabled { background: #5a2324; color: #8a5555; }
+    .btn-home      { background: #4ea8ff; }
+    .btn-home:hover:not(:disabled) { background: #3d8fe0; }
+    .btn-reset     { background: #6c757d; }
+    .btn-reset:hover:not(:disabled) { background: #5a6268; }
+
     .error-banner {
         background: rgba(234, 84, 85, .15);
         border: 1px solid #ea5455;
@@ -178,6 +209,29 @@
         font-size: .9rem;
         display: none;
     }
+
+    .gamut-target {
+        cursor: pointer;
+        padding: .5rem;
+        border-radius: 8px;
+        border: 2px solid transparent;
+        text-align: center;
+        transition: border-color .15s;
+    }
+    .gamut-target:hover { border-color: #4ea8ff; }
+    .gamut-target.selected { border-color: #28c76f; }
+    .calibrating-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255,255,255,.2);
+        border-top-color: #4ea8ff;
+        border-radius: 50%;
+        animation: spin .6s linear infinite;
+        vertical-align: middle;
+        margin-right: .5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 {% endblock %}
 
@@ -192,16 +246,51 @@
             <option value="quick">Quick</option>
             <option value="full">Full</option>
         </select>
-        <button class="btn btn-success" id="btn-start" onclick="doStart()">Start</button>
-        <button class="btn btn-warning" id="btn-pause" onclick="doPause()" disabled>Pause</button>
-        <button class="btn btn-success" id="btn-resume" onclick="doResume()" disabled>Resume</button>
-        <button class="btn btn-danger"  id="btn-stop"   onclick="doStop()" disabled>Stop</button>
-        <button class="btn btn-info"    id="btn-home"   onclick="doHome()" disabled>Home</button>
-        <button class="btn btn-secondary" id="btn-reset" onclick="doReset()" disabled>Reset</button>
+        <button class="btn btn-tipcheck"  id="btn-tipcheck"  onclick="doRobotCal()">Robot Calibration</button>
+        <button class="btn btn-calibrate" id="btn-calibrate" onclick="doCalibrate()">Color Calibration</button>
+        <button class="btn btn-start"     id="btn-start"     onclick="doStart()">Start</button>
+        <button class="btn btn-pause"     id="btn-pause"     onclick="doPause()" disabled>Pause</button>
+        <button class="btn btn-resume"    id="btn-resume"    onclick="doResume()" disabled>Resume</button>
+        <button class="btn btn-stop"      id="btn-stop"      onclick="doStop()" disabled>E-Stop</button>
+        <button class="btn btn-home"      id="btn-home"      onclick="doHome()" disabled>Home</button>
+        <button class="btn btn-reset"     id="btn-reset"     onclick="doReset()" disabled>Reset</button>
     </div>
 </div>
 
 <div class="error-banner" id="error-banner"></div>
+
+<div class="panel" id="calibration-panel" style="margin-bottom:1.5rem;">
+    <h2>Color Calibration</h2>
+    <!-- Triggered by the "Color Calibration" button above -->
+    <div id="cal-status">
+        <p style="color:#8899aa;">Click <strong>Calibrate</strong> to run controls in column 1 and measure your dye colors.</p>
+    </div>
+    <div id="cal-results" style="display:none;">
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1rem;">
+            <div><span class="label">Pure Red</span><br><span class="color-swatch" id="swatch-red"></span><span id="rgb-red" class="mono-sub"></span></div>
+            <div><span class="label">Pure Green</span><br><span class="color-swatch" id="swatch-green"></span><span id="rgb-green" class="mono-sub"></span></div>
+            <div><span class="label">Pure Blue</span><br><span class="color-swatch" id="swatch-blue"></span><span id="rgb-blue" class="mono-sub"></span></div>
+            <div><span class="label">Water</span><br><span class="color-swatch" id="swatch-water"></span><span id="rgb-water" class="mono-sub"></span></div>
+        </div>
+        <h3 style="color:#8899aa; font-size:.9rem; margin-bottom:.75rem;">Reachable Colors — click to select target</h3>
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap; align-items:flex-start;">
+            <div>
+                <canvas id="gamut-canvas" width="420" height="420" style="border:1px solid #243b5c; border-radius:8px; cursor:crosshair;"></canvas>
+                <div class="mono-sub" style="margin-top:.35rem; color:#667788;" id="gamut-hover-info">hover over the color map</div>
+            </div>
+            <div style="min-width:180px;">
+                <div id="selected-target" style="display:none; margin-bottom:1rem;">
+                    <div class="label">Selected Target</div>
+                    <span class="color-swatch" id="swatch-selected" style="width:48px;height:48px;"></span>
+                    <div id="rgb-selected" class="mono-sub" style="margin-top:.25rem;"></div>
+                    <button class="btn btn-start" style="margin-top:.75rem; width:100%;" onclick="confirmTarget()">Confirm Target</button>
+                </div>
+                <div class="label" style="margin-bottom:.35rem;">Pure Dye Corners</div>
+                <div id="gamut-targets" style="display:flex; gap:.5rem; flex-wrap:wrap;"></div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="status-cards">
     <div class="stat-card">
@@ -338,6 +427,7 @@ var chart = new Chart(ctx, {
 
 /* ── State ─────────────────────────────────────────────── */
 var _lastJson = '';
+var _gamutLoaded = false;
 
 /* ── Helpers ───────────────────────────────────────────── */
 function swatch(rgb, size) {
@@ -348,41 +438,43 @@ function swatch(rgb, size) {
 }
 
 function setButtons(state) {
-    var start  = document.getElementById('btn-start');
-    var pause  = document.getElementById('btn-pause');
-    var resume = document.getElementById('btn-resume');
-    var stop   = document.getElementById('btn-stop');
-    var home   = document.getElementById('btn-home');
-    var reset  = document.getElementById('btn-reset');
+    var start     = document.getElementById('btn-start');
+    var pause     = document.getElementById('btn-pause');
+    var resume    = document.getElementById('btn-resume');
+    var stop      = document.getElementById('btn-stop');
+    var home      = document.getElementById('btn-home');
+    var reset     = document.getElementById('btn-reset');
+    var calibrate = document.getElementById('btn-calibrate');
 
-    // Default: all disabled
+    // Default: all disabled except E-Stop
     start.disabled = true;
     pause.disabled = true;
     resume.disabled = true;
-    stop.disabled = true;
+    stop.disabled = false;  // E-Stop always enabled (except idle/terminal)
     home.disabled = true;
     reset.disabled = true;
+    calibrate.disabled = true;
 
     if (state === 'idle') {
+        stop.disabled = true;
         start.disabled = false;
+        calibrate.disabled = false;
+    } else if (state === 'calibrating') {
+        // only E-Stop enabled
     } else if (state === 'running') {
         pause.disabled = false;
-        stop.disabled = false;
     } else if (state === 'pausing') {
-        // all disabled — waiting for safe point
+        // E-Stop enabled, waiting for safe point
     } else if (state === 'paused') {
         resume.disabled = false;
-        stop.disabled = false;
     } else if (state === 'stopping') {
-        // all disabled
-    } else if (state === 'stopped' || state === 'completed' || state === 'converged') {
+        // E-Stop stays enabled
+    } else if (state === 'stopped' || state === 'completed' || state === 'converged' || state === 'failed') {
+        stop.disabled = true;
         home.disabled = false;
         reset.disabled = false;
         start.disabled = false;
-    } else if (state === 'failed') {
-        home.disabled = false;
-        reset.disabled = false;
-        start.disabled = false;
+        calibrate.disabled = false;
     }
 }
 
@@ -537,6 +629,30 @@ function applyStatus(s) {
     }
     tb.innerHTML = html;
 
+    // Calibration state from status — load gamut canvas once
+    if (s.calibration_done && s.pure_rgbs && !_gamutLoaded) {
+        _gamutLoaded = true;
+        document.getElementById('cal-results').style.display = 'block';
+        document.getElementById('cal-status').innerHTML = '<span style="color:#28c76f;">Calibration complete!</span>';
+        setSwatchAndText('red', s.pure_rgbs.red);
+        setSwatchAndText('green', s.pure_rgbs.green);
+        setSwatchAndText('blue', s.pure_rgbs.blue);
+        if (s.water_rgb) setSwatchAndText('water', s.water_rgb);
+
+        // Fetch full gamut data for canvas color picker (once)
+        fetch('/protocol/gamut').then(function(r){return r.json()}).then(function(g){
+            if (g.calibration_done && g.samples_rgb && g.samples_rgb.length) {
+                renderGamutCanvas(g.samples_rgb);
+            }
+        });
+    }
+
+    // Show custom target if set
+    if (s.custom_target) {
+        var te = document.getElementById('card-target');
+        te.innerHTML = '<span class="color-swatch" style="background:rgb(' + s.custom_target.join(',') + ')"></span> (' + s.custom_target.map(function(v){return Math.round(v)}).join(', ') + ')';
+    }
+
     // Plan table
     var plan = s.plan;
     var pb = document.getElementById('plan-body');
@@ -622,6 +738,241 @@ window.doReset = async function() {
     var d = await apiPost('/protocol/reset');
     if (d && !d.ok && d.error) alert(d.error);
     pollNow();
+};
+
+// ---- Calibration ----
+window.doRobotCal = async function() {
+    // Build a calibration profile from the active protocol config, then navigate
+    var btn = document.getElementById('btn-tipcheck');
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    try {
+        var profileResp = await fetch('/protocol/robot-calibration-profile');
+        var profile = await profileResp.json();
+        if (!profileResp.ok) {
+            alert('Failed to build calibration profile: ' + (profile.detail || profile.error || 'unknown'));
+            return;
+        }
+        var r = await fetch('/api/calibration/create-profile', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(profile)
+        });
+        var d = await r.json();
+        if (d.status === 'ok') {
+            window.location.href = '/calibration';
+        } else {
+            alert('Failed to create calibration profile: ' + (d.detail || d.error || 'unknown'));
+        }
+    } catch(e) {
+        alert('Robot calibration setup failed: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Robot Calibration';
+};
+
+window.doCalibrate = async function() {
+    var btn = document.getElementById('btn-calibrate');
+    btn.disabled = true;
+    document.getElementById('cal-status').innerHTML = '<span class="calibrating-spinner"></span> Running calibration (dispensing controls in column 1)...';
+
+    try {
+        var r = await fetch('/protocol/calibrate', {method: 'POST'});
+        var d = await r.json();
+
+        if (d.ok) {
+            showCalibrationResults(d);
+        } else {
+            document.getElementById('cal-status').innerHTML = '<span style="color:#ea5455;">Calibration failed: ' + (d.error || 'unknown') + '</span>';
+        }
+    } catch(e) {
+        document.getElementById('cal-status').innerHTML = '<span style="color:#ea5455;">Calibration request failed</span>';
+    }
+    btn.disabled = false;
+};
+
+
+// ---- Gamut color picker ----
+var _gamutSamples = [];   // [{rgb:[R,G,B], x:px, y:px}, ...]
+var _selectedTarget = null;
+var _gamutCanvas = null;
+var _gamutCtx = null;
+
+function showCalibrationResults(d) {
+    document.getElementById('cal-status').innerHTML = '<span style="color:#28c76f;">Calibration complete!</span>';
+    document.getElementById('cal-results').style.display = 'block';
+
+    var p = d.pure_rgbs;
+    setSwatchAndText('red', p.red);
+    setSwatchAndText('green', p.green);
+    setSwatchAndText('blue', p.blue);
+    setSwatchAndText('water', d.water_rgb);
+
+    // Show pure dye corners as small swatches
+    var corners = document.getElementById('gamut-targets');
+    corners.innerHTML = '';
+    ['red','green','blue'].forEach(function(k) {
+        var c = p[k];
+        var div = document.createElement('div');
+        div.className = 'gamut-target';
+        div.innerHTML = '<span class="color-swatch" style="background:rgb('+c.join(',')+');width:32px;height:32px;"></span><br><span class="mono-sub" style="font-size:.7rem;">'+k+'</span>';
+        div.dataset.rgb = JSON.stringify(c);
+        div.onclick = function(){ pickColorFromRGB(JSON.parse(this.dataset.rgb)); };
+        corners.appendChild(div);
+    });
+
+    // Build gamut canvas
+    var samples = (d.gamut && d.gamut.samples_rgb) || [];
+    renderGamutCanvas(samples);
+    _gamutLoaded = true;
+}
+
+function renderGamutCanvas(samplesRgb) {
+    _gamutCanvas = document.getElementById('gamut-canvas');
+    _gamutCtx = _gamutCanvas.getContext('2d');
+    var W = _gamutCanvas.width, H = _gamutCanvas.height;
+    var pad = 20;
+
+    // Map RGB to 2D: use R as X axis, B as Y axis (inverted so blue=top)
+    // Normalize to the actual range of the gamut
+    if (!samplesRgb.length) return;
+
+    var rMin=255, rMax=0, bMin=255, bMax=0;
+    for (var i=0; i<samplesRgb.length; i++) {
+        var s = samplesRgb[i];
+        if (s[0]<rMin) rMin=s[0]; if (s[0]>rMax) rMax=s[0];
+        if (s[2]<bMin) bMin=s[2]; if (s[2]>bMax) bMax=s[2];
+    }
+    var rSpan = Math.max(rMax-rMin, 1);
+    var bSpan = Math.max(bMax-bMin, 1);
+
+    // Fill background
+    _gamutCtx.fillStyle = '#0d1117';
+    _gamutCtx.fillRect(0, 0, W, H);
+
+    // Plot each sample as a colored dot
+    _gamutSamples = [];
+    var dotSize = 5;
+    for (var i=0; i<samplesRgb.length; i++) {
+        var s = samplesRgb[i];
+        var px = pad + ((s[0]-rMin)/rSpan) * (W - 2*pad);
+        var py = pad + (1 - (s[2]-bMin)/bSpan) * (H - 2*pad);  // blue increases upward
+        _gamutSamples.push({rgb:[Math.round(s[0]),Math.round(s[1]),Math.round(s[2])], x:px, y:py});
+
+        _gamutCtx.fillStyle = 'rgb('+Math.round(s[0])+','+Math.round(s[1])+','+Math.round(s[2])+')';
+        _gamutCtx.beginPath();
+        _gamutCtx.arc(px, py, dotSize, 0, Math.PI*2);
+        _gamutCtx.fill();
+    }
+
+    // Axis labels
+    _gamutCtx.fillStyle = '#667788';
+    _gamutCtx.font = '11px sans-serif';
+    _gamutCtx.fillText('← Red channel →', W/2-40, H-3);
+    _gamutCtx.save();
+    _gamutCtx.translate(12, H/2+40);
+    _gamutCtx.rotate(-Math.PI/2);
+    _gamutCtx.fillText('← Blue channel →', 0, 0);
+    _gamutCtx.restore();
+
+    // Events
+    _gamutCanvas.onmousemove = function(e) {
+        var rect = _gamutCanvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var nearest = findNearestSample(mx, my);
+        if (nearest) {
+            document.getElementById('gamut-hover-info').textContent =
+                'RGB (' + nearest.rgb.join(', ') + ')';
+        }
+    };
+
+    _gamutCanvas.onclick = function(e) {
+        var rect = _gamutCanvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var nearest = findNearestSample(mx, my);
+        if (nearest) {
+            pickColorFromRGB(nearest.rgb);
+            // Draw selection ring
+            redrawGamut(nearest);
+        }
+    };
+}
+
+function findNearestSample(mx, my) {
+    var best = null, bestD = Infinity;
+    for (var i=0; i<_gamutSamples.length; i++) {
+        var s = _gamutSamples[i];
+        var d = (s.x-mx)*(s.x-mx) + (s.y-my)*(s.y-my);
+        if (d < bestD) { bestD = d; best = s; }
+    }
+    return (bestD < 400) ? best : null;  // max 20px distance
+}
+
+function redrawGamut(selected) {
+    if (!_gamutCtx || !_gamutSamples.length) return;
+    var W = _gamutCanvas.width, H = _gamutCanvas.height;
+
+    // Redraw background + dots
+    _gamutCtx.fillStyle = '#0d1117';
+    _gamutCtx.fillRect(0, 0, W, H);
+
+    for (var i=0; i<_gamutSamples.length; i++) {
+        var s = _gamutSamples[i];
+        _gamutCtx.fillStyle = 'rgb('+s.rgb[0]+','+s.rgb[1]+','+s.rgb[2]+')';
+        _gamutCtx.beginPath();
+        _gamutCtx.arc(s.x, s.y, 5, 0, Math.PI*2);
+        _gamutCtx.fill();
+    }
+
+    // Draw selection ring
+    if (selected) {
+        _gamutCtx.strokeStyle = '#ffffff';
+        _gamutCtx.lineWidth = 2.5;
+        _gamutCtx.beginPath();
+        _gamutCtx.arc(selected.x, selected.y, 12, 0, Math.PI*2);
+        _gamutCtx.stroke();
+        _gamutCtx.strokeStyle = '#28c76f';
+        _gamutCtx.lineWidth = 1.5;
+        _gamutCtx.beginPath();
+        _gamutCtx.arc(selected.x, selected.y, 14, 0, Math.PI*2);
+        _gamutCtx.stroke();
+    }
+
+    // Axis labels
+    _gamutCtx.fillStyle = '#667788';
+    _gamutCtx.font = '11px sans-serif';
+    _gamutCtx.fillText('← Red channel →', W/2-40, H-3);
+    _gamutCtx.save();
+    _gamutCtx.translate(12, H/2+40);
+    _gamutCtx.rotate(-Math.PI/2);
+    _gamutCtx.fillText('← Blue channel →', 0, 0);
+    _gamutCtx.restore();
+}
+
+function pickColorFromRGB(rgb) {
+    _selectedTarget = rgb;
+    document.getElementById('selected-target').style.display = 'block';
+    document.getElementById('swatch-selected').style.background = 'rgb('+rgb.join(',')+')';
+    document.getElementById('rgb-selected').textContent = '('+rgb.join(', ')+')';
+}
+
+function setSwatchAndText(name, rgb) {
+    document.getElementById('swatch-'+name).style.background = 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
+    document.getElementById('rgb-'+name).textContent = '('+rgb.map(function(v){return Math.round(v)}).join(', ')+')';
+}
+
+window.confirmTarget = async function() {
+    if (!_selectedTarget) return;
+    var r = await fetch('/protocol/set-target', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({rgb: _selectedTarget})
+    });
+    var d = await r.json();
+    if (d.ok) {
+        var te = document.getElementById('card-target');
+        te.innerHTML = '<span class="color-swatch" style="background:rgb('+_selectedTarget.join(',')+')"></span> ('+_selectedTarget.join(', ')+')';
+    }
 };
 
 /* ── Polling ───────────────────────────────────────────── */

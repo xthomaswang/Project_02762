@@ -7,6 +7,7 @@ idle -> running -> pausing -> paused -> running (resume)
                 -> converged
                 -> completed
                 -> failed
+idle -> calibrating -> idle  (calibrate)
 
 The loop runs in a background thread.  ``pause()``, ``resume()``, and
 ``stop()`` are called from the API thread; synchronisation is handled
@@ -51,14 +52,21 @@ logger = logging.getLogger(__name__)
 # Plan helpers
 # ======================================================================
 
-def build_plan(config: dict, mode: str, seed: int = 42) -> dict:
+def build_plan(
+    config: dict,
+    mode: str,
+    seed: int = 42,
+    start_column: int = 0,
+    pre_calibrated: bool = False,
+) -> dict:
     """Build a human-readable protocol plan from *config* + *mode*.
 
     Returns a dict with a top-level summary and per-iteration detail.
     """
     exp = config.get("experiment", {})
     ml = config.get("ml", {})
-    n_initial = exp.get("n_initial", 5)
+    n_initial_raw = exp.get("n_initial", 5)
+    n_initial = max(n_initial_raw - (1 if pre_calibrated else 0), 0)
     n_opt = exp.get("n_optimization", 7)
     total_volume = float(config.get("total_volume_ul", 200))
 
@@ -83,11 +91,11 @@ def build_plan(config: dict, mode: str, seed: int = 42) -> dict:
     iterations: list[dict] = []
     for i in range(total):
         phase = "random" if i < n_initial else "bo"
-        skip = skip_controls_after_first and i > 0
+        skip = skip_controls_after_first and (pre_calibrated or i > 0)
         entry: dict[str, Any] = {
             "iteration": i + 1,
             "phase": phase,
-            "column": (i % 12) + 1,
+            "column": ((i + start_column) % 12) + 1,
             "skip_controls": skip,
             "status": "planned",
         }
@@ -108,9 +116,12 @@ def build_plan(config: dict, mode: str, seed: int = 42) -> dict:
         "convergence_threshold": threshold,
         "total_iterations": total,
         "n_initial": n_initial,
+        "n_initial_configured": n_initial_raw,
         "n_optimization": n_opt,
         "mix_cycles": mix_cycles,
         "skip_controls_after_first": skip_controls_after_first,
+        "pre_calibrated": pre_calibrated,
+        "start_column": start_column,
         "distance_metric": ml.get("distance_metric", "rgb_euclidean"),
         "model_type": ml.get("model", "correlated_gp"),
         "acquisition": ml.get("acquisition", "EI"),
@@ -149,6 +160,7 @@ class ActiveLearningLoop:
         self.config = self._load_config(config_path)
         self.config_path = config_path
         self._reset_state()
+        self._load_persisted_color_calibration()
 
     # ------------------------------------------------------------------
     # Internal state management
@@ -180,9 +192,109 @@ class ActiveLearningLoop:
         # Plan (populated at start time)
         self._plan: Optional[dict] = None
 
+        # Calibration state
+        self._calibration_done = False
+        self._pure_rgbs: Optional[dict] = None  # {"red": [...], "green": [...], "blue": [...]}
+        self._water_rgb: Optional[list] = None
+        self._gamut: Optional[dict] = None
+        self._custom_target: Optional[list] = None  # user-selected target from gamut
+
     def _load_config(self, path: str) -> dict:
         with open(path) as f:
             return yaml.safe_load(f)
+
+    def _resolve_config_path(self, path: str) -> str:
+        """Resolve config-relative paths against the YAML location."""
+        if not path:
+            return ""
+        if os.path.isabs(path):
+            return path
+        config_dir = os.path.dirname(os.path.abspath(self.config_path))
+        return os.path.join(config_dir, path)
+
+    def _resolved_grid_path(self) -> str:
+        """Return the absolute grid-calibration path for the current config."""
+        raw_path = self.config.get("calibration", {}).get("grid_path", "")
+        return self._resolve_config_path(raw_path)
+
+    def _color_calibration_dir(self) -> Path:
+        """Return the directory used for persisted color-calibration state."""
+        return Path(self.config_path).resolve().parent / "calibrations" / "color_calibration"
+
+    def _color_calibration_path(self) -> Path:
+        """Return the canonical saved color-calibration file path."""
+        return self._color_calibration_dir() / "color_profile.json"
+
+    def _save_color_calibration(self) -> Path:
+        """Persist the current color-calibration state to disk."""
+        if not self._pure_rgbs or self._water_rgb is None or self._cached_reference is None:
+            raise ValueError("Color calibration state is incomplete; nothing to save")
+
+        path = self._color_calibration_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": 1,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+            "pure_rgbs": self._pure_rgbs,
+            "water_rgb": self._water_rgb,
+            "gamut": self._gamut,
+            "cached_reference": self._cached_reference,
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return path
+
+    def _load_persisted_color_calibration(self) -> bool:
+        """Load saved color-calibration state if present."""
+        path = self._color_calibration_path()
+        if not path.exists():
+            return False
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            pure_rgbs = payload.get("pure_rgbs")
+            water_rgb = payload.get("water_rgb")
+            cached_reference = payload.get("cached_reference")
+            gamut = payload.get("gamut")
+            if pure_rgbs is None or water_rgb is None or cached_reference is None:
+                logger.warning(
+                    "Ignoring incomplete color calibration at %s", path
+                )
+                return False
+            if gamut is None:
+                from src.color.metrics import compute_reachable_gamut
+
+                gamut = compute_reachable_gamut(pure_rgbs, np.array(water_rgb))
+
+            self._pure_rgbs = pure_rgbs
+            self._water_rgb = water_rgb
+            self._cached_reference = cached_reference
+            self._gamut = gamut
+            self._calibration_done = True
+            logger.info("Loaded color calibration from %s", path)
+            return True
+        except Exception as exc:
+            logger.warning("Could not load color calibration from %s: %s", path, exc)
+            return False
+
+    def _snapshot_calibration_state(self) -> dict:
+        """Preserve calibration data across run restarts."""
+        return {
+            "calibration_done": self._calibration_done,
+            "pure_rgbs": self._pure_rgbs,
+            "water_rgb": self._water_rgb,
+            "gamut": self._gamut,
+            "custom_target": self._custom_target,
+            "cached_reference": self._cached_reference,
+        }
+
+    def _restore_calibration_state(self, snapshot: dict) -> None:
+        """Restore previously captured calibration state."""
+        self._calibration_done = snapshot.get("calibration_done", False)
+        self._pure_rgbs = snapshot.get("pure_rgbs")
+        self._water_rgb = snapshot.get("water_rgb")
+        self._gamut = snapshot.get("gamut")
+        self._custom_target = snapshot.get("custom_target")
+        self._cached_reference = snapshot.get("cached_reference")
 
     # ------------------------------------------------------------------
     # Public API
@@ -196,14 +308,23 @@ class ActiveLearningLoop:
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("Loop is already running")
 
-        # Full reset for a clean start
+        # Reset run-time state but keep any completed calibration.
+        calibration_state = self._snapshot_calibration_state()
         self._reset_state()
+        self._restore_calibration_state(calibration_state)
         self._mode = mode
         self._state = "running"
 
         # Build plan
         seed = self.config.get("seed", 42)
-        self._plan = build_plan(self.config, mode, seed=seed)
+        start_col = 1 if self._calibration_done else 0
+        self._plan = build_plan(
+            self.config,
+            mode,
+            seed=seed,
+            start_column=start_col,
+            pre_calibrated=self._calibration_done,
+        )
 
         # Create persistent sequence
         seq = RunSequence(
@@ -264,24 +385,25 @@ class ActiveLearningLoop:
             logger.info("Resumed")
 
     def stop(self):
-        """Request a graceful stop.
+        """Emergency stop — works in ANY active state.
 
-        If paused, wakes the loop thread so it can exit.  If running,
-        signals the runner to pause at the next safe-point, then the
-        loop will exit instead of starting the next iteration.
+        Signals the runner to pause at the next safe-point.  Works during
+        calibration, running, pausing, or paused states.
         """
         self._stop_requested = True
+        prev = self._state
+
         if self._state == "paused":
-            # Wake the loop thread so it can see _stop_requested and exit
             self._resume_event.set()
-        elif self._state == "running":
+        elif self._state in ("running", "calibrating", "pausing"):
             self._state = "stopping"
             if self._active_run_id:
                 try:
                     self.runner.request_pause(self._active_run_id)
                 except Exception as exc:
                     logger.warning("request_pause (stop) failed: %s", exc)
-        logger.info("Stop requested")
+
+        logger.info("E-STOP requested (was %s)", prev)
 
     def home(self) -> dict:
         """Home the robot.  Only safe when not actively running."""
@@ -317,19 +439,298 @@ class ActiveLearningLoop:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def calibrate(self) -> dict:
+        """Run a calibration column (controls only) to measure pure dye RGBs.
+
+        Dispenses controls into column 1, captures image, extracts RGB for
+        each control well (A=Red, B=Green, C=Blue, D=Water), then computes
+        the reachable color gamut.
+
+        Returns dict with ok, pure_rgbs, water_rgb, gamut.
+        """
+        if self._state not in ("idle", "stopped", "completed", "converged", "failed"):
+            return {"ok": False, "error": f"Cannot calibrate in state '{self._state}'"}
+
+        self._state = "calibrating"
+
+        try:
+            return self._run_calibration()
+        except Exception as exc:
+            logger.error("Calibration failed: %s", exc, exc_info=True)
+            self._state = "idle"
+            return {"ok": False, "error": str(exc)}
+
+    def _run_calibration(self) -> dict:
+        """Execute calibration synchronously (called from calibrate())."""
+        cfg = self.config
+        grid_path = self._resolved_grid_path()
+        control_volume = float(cfg.get("total_volume_ul", 200))
+        settle_time = cfg.get("experiment", {}).get("settle_time_seconds", 10)
+        clean_cfg = cfg.get("cleaning", {})
+        rinse_cycles = clean_cfg.get("rinse_cycles", 3)
+        rinse_volume = float(clean_cfg.get("rinse_volume_ul", 200))
+
+        # Build calibration steps: controls in column 1 + capture
+        steps = []
+
+        # Use left pipette for controls
+        steps.append({"name": "Select left pipette", "kind": "use_pipette", "params": {"mount": "left"}})
+
+        controls = [
+            ("Red → A1", "7", "A1", "A1", "A6"),
+            ("Green → B1", "8", "B1", "B1", "A6"),
+            ("Blue → C1", "9", "C1", "C1", "A6"),
+            ("Water → D1", "5", "D1", "D1", "A5"),
+        ]
+
+        _rinse_kw = {}
+        if rinse_cycles is not None:
+            _rinse_kw["rinse_cycles"] = rinse_cycles
+        if rinse_volume is not None:
+            _rinse_kw["rinse_volume"] = rinse_volume
+
+        for label, src_slot, tip, dest, rinse in controls:
+            steps.append({
+                "name": f"Cal: {label}",
+                "kind": "transfer",
+                "params": {
+                    "tiprack_slot": "10", "source_slot": src_slot,
+                    "dest_slot": "1", "tip_well": tip,
+                    "source_well": "A1", "dest_well": dest,
+                    "volume": control_volume, "cleaning_slot": "4",
+                    "rinse_well": rinse, **_rinse_kw,
+                },
+            })
+
+        # Home + settle + capture
+        steps.append({"name": "Home", "kind": "home", "params": {}})
+        steps.append({"name": f"Settle {settle_time}s", "kind": "wait", "params": {"seconds": settle_time}})
+        steps.append({"name": "Capture calibration", "kind": "capture", "params": {"label": "calibration_col1"}})
+
+        # Create and execute run
+        run_steps = [RunStep(**s) for s in steps]
+        run = TaskRun(name="Calibration (column 1)", steps=run_steps, metadata={"type": "calibration"})
+        run = self.store.create_run(run)
+
+        self._active_run_id = run.id
+        self.runner.run_until_pause_or_done(run.id)
+        self._active_run_id = None
+
+        # Check if E-Stop was pressed during calibration
+        if self._stop_requested:
+            self._state = "stopped"
+            return {"ok": False, "error": "Calibration stopped by user"}
+
+        # Reload run to get outputs
+        run = self.store.load_run(run.id)
+
+        # Check run succeeded
+        if run.status != RunStatus.completed:
+            self._state = "idle"
+            failed_step = next((s for s in run.steps if s.error), None)
+            return {"ok": False, "error": f"Calibration run failed: {failed_step.error if failed_step else 'unknown'}"}
+
+        # Get capture output for image path
+        capture_output = None
+        for s in run.steps:
+            if s.kind == "capture" and s.output:
+                capture_output = s.output
+                break
+
+        if not capture_output:
+            self._state = "idle"
+            return {"ok": False, "error": "Capture step produced no output"}
+
+        image_path = capture_output.get("image_path") or capture_output.get("path")
+        if not image_path:
+            self._state = "idle"
+            return {"ok": False, "error": "No image path in capture output"}
+
+        # Extract RGB from control wells
+        class _P:
+            def __init__(self, params): self.params = params
+
+        rgb_result = handle_extract_rgb(_P({
+            "image_path": image_path,
+            "col": 0,  # column 1 = index 0
+            "grid_path": grid_path,
+            "cached_reference": None,
+            "skip_controls": False,
+        }))
+
+        if rgb_result.get("error"):
+            self._state = "idle"
+            return {"ok": False, "error": f"RGB extraction failed: {rgb_result['error']}"}
+
+        # We need individual control well RGBs, not experiment mean.
+        # Re-extract from image directly.
+        try:
+            import cv2
+            from src.vision.extraction import extract_well_rgb
+            from src.vision.geometry import load_grid_calibration
+
+            img = cv2.imread(image_path)
+            grid = None
+            if grid_path:
+                try:
+                    grid = load_grid_calibration(grid_path)
+                except Exception:
+                    pass
+
+            # A=0=Red, B=1=Green, C=2=Blue, D=3=Water (column 0)
+            red_rgb = extract_well_rgb(img, 0, 0, grid).tolist()
+            green_rgb = extract_well_rgb(img, 1, 0, grid).tolist()
+            blue_rgb = extract_well_rgb(img, 2, 0, grid).tolist()
+            water_rgb = extract_well_rgb(img, 3, 0, grid).tolist()
+        except Exception as exc:
+            self._state = "idle"
+            return {"ok": False, "error": f"Control well extraction failed: {exc}"}
+
+        self._pure_rgbs = {"red": red_rgb, "green": green_rgb, "blue": blue_rgb}
+        self._water_rgb = water_rgb
+
+        # Cache the runtime reference for subsequent columns
+        if rgb_result.get("runtime_reference"):
+            self._cached_reference = rgb_result["runtime_reference"]
+
+        # Compute gamut
+        from src.color.metrics import compute_reachable_gamut
+        self._gamut = compute_reachable_gamut(self._pure_rgbs, np.array(self._water_rgb))
+
+        try:
+            save_path = self._save_color_calibration()
+            logger.info("Saved color calibration to %s", save_path)
+        except Exception as exc:
+            logger.warning("Could not save color calibration: %s", exc)
+
+        self._calibration_done = True
+        self._state = "idle"
+
+        logger.info(
+            "Calibration complete:\n  Red:   %s\n  Green: %s\n  Blue:  %s\n  Water: %s",
+            red_rgb, green_rgb, blue_rgb, water_rgb,
+        )
+
+        return {
+            "ok": True,
+            "pure_rgbs": self._pure_rgbs,
+            "water_rgb": self._water_rgb,
+            "gamut": self._gamut,
+        }
+
+    def tip_check(self) -> dict:
+        """Run a tip pick-up / drop check for both pipettes.
+
+        Sequentially picks up and drops tips from the left (slot 10) and
+        right (slot 11) tip-racks so the operator can visually verify
+        that tips are seated and released correctly.
+
+        Only callable when the loop is idle or in a terminal state.
+        Returns ``{"ok": True}`` on success or ``{"ok": False, "error": ...}``.
+        """
+        if self._state not in ("idle", "stopped", "completed", "converged", "failed"):
+            return {"ok": False, "error": f"Cannot run tip check in state '{self._state}'"}
+
+        prev_state = self._state
+        self._state = "calibrating"
+
+        try:
+            steps: list[dict] = []
+
+            # -- Left pipette: tips from slot 10, wells A1-D1 --
+            steps.append({"name": "Select left pipette", "kind": "use_pipette", "params": {"mount": "left"}})
+            for well in ("A1", "B1", "C1", "D1"):
+                steps.append({
+                    "name": f"Pick up tip {well} (left)",
+                    "kind": "pick_up_tip",
+                    "params": {"slot": "10", "well": well},
+                })
+                steps.append({
+                    "name": f"Drop tip {well} (left)",
+                    "kind": "drop_tip",
+                    "params": {},
+                })
+
+            # -- Right pipette: tips from slot 11, wells A1-A4 --
+            steps.append({"name": "Select right pipette", "kind": "use_pipette", "params": {"mount": "right"}})
+            for well in ("A1", "A2", "A3", "A4"):
+                steps.append({
+                    "name": f"Pick up tip {well} (right)",
+                    "kind": "pick_up_tip",
+                    "params": {"slot": "11", "well": well},
+                })
+                steps.append({
+                    "name": f"Drop tip {well} (right)",
+                    "kind": "drop_tip",
+                    "params": {},
+                })
+
+            # -- Home at the end --
+            steps.append({"name": "Home", "kind": "home", "params": {}})
+
+            # Create and execute the run synchronously
+            run_steps = [RunStep(**s) for s in steps]
+            run = TaskRun(name="Tip Check", steps=run_steps, metadata={"type": "tip_check"})
+            run = self.store.create_run(run)
+
+            self._active_run_id = run.id
+            self.runner.run_until_pause_or_done(run.id)
+            self._active_run_id = None
+
+            # Check result
+            run = self.store.load_run(run.id)
+            if run.status != RunStatus.completed:
+                failed_step = next(
+                    (s for s in run.steps if s.status == StepStatus.failed), None
+                )
+                self._state = prev_state
+                return {
+                    "ok": False,
+                    "error": (
+                        failed_step.error
+                        if failed_step and failed_step.error
+                        else f"Tip check run ended with status {run.status.value}"
+                    ),
+                    "run_id": run.id,
+                }
+
+            self._state = prev_state
+            logger.info("Tip check completed successfully")
+            return {"ok": True, "run_id": run.id}
+
+        except Exception as exc:
+            logger.error("Tip check failed: %s", exc, exc_info=True)
+            self._state = prev_state
+            return {"ok": False, "error": str(exc)}
+
+    def set_target(self, rgb: list) -> dict:
+        """Set a custom target RGB (typically chosen from the gamut)."""
+        if len(rgb) != 3:
+            return {"ok": False, "error": "Target must be [R, G, B]"}
+        self._custom_target = [float(rgb[0]), float(rgb[1]), float(rgb[2])]
+        logger.info("Custom target set: %s", self._custom_target)
+        return {"ok": True, "target_rgb": self._custom_target}
+
     def reset(self) -> dict:
         """Reset the loop to idle state.  Only allowed when not running."""
         if self._state in ("running", "pausing", "paused", "stopping"):
             return {"ok": False, "error": "Cannot reset while protocol is active"}
         if self._active_run_id is not None:
             return {"ok": False, "error": "Cannot reset while an active run is still attached"}
+        calibration_state = self._snapshot_calibration_state()
         self._reset_state()
+        self._restore_calibration_state(calibration_state)
         return {"ok": True}
 
     def status(self) -> dict:
         """Return a comprehensive snapshot of loop state."""
+        start_col = 1 if self._calibration_done else 0
         plan = self._plan or build_plan(
-            self.config, self._mode, self.config.get("seed", 42)
+            self.config,
+            self._mode,
+            self.config.get("seed", 42),
+            start_column=start_col,
+            pre_calibrated=self._calibration_done,
         )
         best_idx = int(np.argmin(self._all_dist)) if self._all_dist else None
         active_run = self._active_run_snapshot()
@@ -354,6 +755,11 @@ class ActiveLearningLoop:
             "converged": self._converged,
             "error": self._error,
             "history": list(self._history),
+            "calibration_done": self._calibration_done,
+            "pure_rgbs": self._pure_rgbs,
+            "water_rgb": self._water_rgb,
+            "gamut_suggested_targets": self._gamut.get("suggested_targets") if self._gamut else None,
+            "custom_target": self._custom_target,
             "plan": plan,
             "active_run": active_run,
         }
@@ -361,7 +767,14 @@ class ActiveLearningLoop:
     def get_plan(self, mode: str = "quick") -> dict:
         """Build and return a plan without starting the loop."""
         seed = self.config.get("seed", 42)
-        return build_plan(self.config, mode, seed=seed)
+        start_col = 1 if self._calibration_done else 0
+        return build_plan(
+            self.config,
+            mode,
+            seed=seed,
+            start_column=start_col,
+            pre_calibrated=self._calibration_done,
+        )
 
     # ------------------------------------------------------------------
     # Main loop
@@ -386,12 +799,18 @@ class ActiveLearningLoop:
         cfg = self.config
         plan = self._plan
         target_rgb = np.array(plan["target_rgb"], dtype=float)
+        # Override target if user selected from gamut
+        if self._custom_target:
+            target_rgb = np.array(self._custom_target, dtype=float)
+            logger.info("Using custom target from calibration: %s", target_rgb.tolist())
         total_volume = float(cfg.get("total_volume_ul", 200))
         threshold = plan["convergence_threshold"]
         seed = cfg.get("seed", 42)
         n_initial = plan["n_initial"]
         n_opt = plan["n_optimization"]
         total = plan["total_iterations"]
+        start_column = plan.get("start_column", 0)
+        pre_calibrated = plan.get("pre_calibrated", False)
 
         bounds_cfg = cfg["volume_bounds"]
         ml_cfg = cfg.get("ml", {})
@@ -402,7 +821,7 @@ class ActiveLearningLoop:
         settle_time = cfg.get("experiment", {}).get("settle_time_seconds", 10)
         mix_cycles = plan["mix_cycles"]
         skip_after_first = plan["skip_controls_after_first"]
-        grid_path = cfg.get("calibration", {}).get("grid_path", "")
+        grid_path = self._resolved_grid_path()
 
         # Rinse config — quick mode uses 2 cycles instead of config default
         clean_cfg = cfg.get("cleaning", {})
@@ -423,9 +842,9 @@ class ActiveLearningLoop:
                 logger.info("Stopped before iteration %d", iteration + 1)
                 return
 
-            col_idx = iteration % 12
+            col_idx = (iteration + start_column) % 12
             phase = "random" if iteration < n_initial else "bo"
-            skip_controls = skip_after_first and iteration > 0
+            skip_controls = skip_after_first and (pre_calibrated or iteration > 0)
 
             # ---- Determine volumes ----
             if phase == "random":

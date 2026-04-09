@@ -71,6 +71,23 @@ def _build_deck_config(config: dict):
     return DeckConfig(pipettes=pipettes, labware=labware)
 
 
+def _autoload_robot_calibration_profile(ot2_app, config_path: Path) -> None:
+    """Load the saved robot calibration profile from configs, if present."""
+    from webapp.calibration import CalibrationSession, load_profile
+
+    profile_path = config_path.parent / "calibrations" / "robot_calibration" / "robot_profile.json"
+    if not profile_path.exists():
+        return
+
+    try:
+        profile = load_profile(profile_path)
+        session = CalibrationSession(profile_id=profile.id, status="active")
+        ot2_app.set_calibration_profile(profile, session=session)
+        logger.info("Loaded robot calibration profile from %s", profile_path)
+    except Exception as exc:
+        logger.warning("Could not load robot calibration profile from %s: %s", profile_path, exc)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="automation_lab web server",
@@ -112,6 +129,7 @@ def main() -> None:
         rinse_cycles=clean_cfg.get("rinse_cycles", 3),
         rinse_volume=float(clean_cfg.get("rinse_volume_ul", 200)),
     )
+    _autoload_robot_calibration_profile(ot2_app, config_path)
 
     # ---- Register custom step handlers ----
     from src.web.handlers import (

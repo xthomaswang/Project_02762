@@ -1,0 +1,178 @@
+{
+  "id": "eba2715fbb0b40f3ba4223f74e99eae3",
+  "name": "color_mixing_robot_calibration",
+  "targets": [
+    {
+      "name": "Left tiprack (slot 10)",
+      "pipette_mount": "left",
+      "labware_slot": "10",
+      "well": "A1",
+      "action": "pick_up_tip",
+      "volume": null,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": -3.7000000000000006
+      }
+    },
+    {
+      "name": "Red reservoir (left)",
+      "pipette_mount": "left",
+      "labware_slot": "7",
+      "well": "A1",
+      "action": "aspirate",
+      "volume": 200.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Green reservoir (left)",
+      "pipette_mount": "left",
+      "labware_slot": "8",
+      "well": "A1",
+      "action": "aspirate",
+      "volume": 200.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Blue reservoir (left)",
+      "pipette_mount": "left",
+      "labware_slot": "9",
+      "well": "A1",
+      "action": "aspirate",
+      "volume": 200.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Water reservoir (left)",
+      "pipette_mount": "left",
+      "labware_slot": "5",
+      "well": "A1",
+      "action": "aspirate",
+      "volume": 200.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Plate dispense (left)",
+      "pipette_mount": "left",
+      "labware_slot": "1",
+      "well": "A1",
+      "action": "dispense",
+      "volume": 200.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Cleaning reservoir (left)",
+      "pipette_mount": "left",
+      "labware_slot": "4",
+      "well": "A6",
+      "action": "aspirate",
+      "volume": 200.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Right tiprack (slot 11)",
+      "pipette_mount": "right",
+      "labware_slot": "11",
+      "well": "A1",
+      "action": "pick_up_tip",
+      "volume": null,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": -3.2000000000000015
+      }
+    },
+    {
+      "name": "Red reservoir (right)",
+      "pipette_mount": "right",
+      "labware_slot": "7",
+      "well": "A1",
+      "action": "aspirate",
+      "volume": 150.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Green reservoir (right)",
+      "pipette_mount": "right",
+      "labware_slot": "8",
+      "well": "A1",
+      "action": "aspirate",
+      "volume": 150.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Blue reservoir (right)",
+      "pipette_mount": "right",
+      "labware_slot": "9",
+      "well": "A1",
+      "action": "aspirate",
+      "volume": 150.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Plate dispense (right)",
+      "pipette_mount": "right",
+      "labware_slot": "1",
+      "well": "A1",
+      "action": "dispense",
+      "volume": 150.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Cleaning reservoir (right)",
+      "pipette_mount": "right",
+      "labware_slot": "4",
+      "well": "A4",
+      "action": "aspirate",
+      "volume": 150.0,
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    }
+  ],
+  "created_at": "2026-04-07T17:01:22.802449Z",
+  "updated_at": "2026-04-07T17:01:22.802461Z",
+  "metadata": {}
+}

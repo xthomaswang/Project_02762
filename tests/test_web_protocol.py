@@ -13,6 +13,8 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
+from pathlib import Path
 
 import numpy as np
 
@@ -609,6 +611,278 @@ class TestRinseConfig(unittest.TestCase):
         self.assertIn("rinse_volume", src)
         self.assertIn("rinse_cycles", src)
         self.assertIn("cleaning", src)
+
+
+class TestCalibrationFlow(unittest.TestCase):
+    """Test calibration method on loop."""
+
+    def test_calibrate_blocked_while_running(self):
+        loop = _make_loop()
+        loop._state = "running"
+        result = loop.calibrate()
+        self.assertFalse(result["ok"])
+
+    def test_set_target(self):
+        loop = _make_loop()
+        result = loop.set_target([100, 50, 200])
+        self.assertTrue(result["ok"])
+        self.assertEqual(loop._custom_target, [100.0, 50.0, 200.0])
+        s = loop.status()
+        self.assertEqual(s["custom_target"], [100.0, 50.0, 200.0])
+
+    def test_set_target_invalid(self):
+        loop = _make_loop()
+        result = loop.set_target([100, 50])  # only 2 values
+        self.assertFalse(result["ok"])
+
+    def test_calibration_status_fields(self):
+        loop = _make_loop()
+        s = loop.status()
+        self.assertIn("calibration_done", s)
+        self.assertIn("pure_rgbs", s)
+        self.assertIn("custom_target", s)
+        self.assertFalse(s["calibration_done"])
+
+    def test_start_column_after_calibration(self):
+        """After calibration, quick plan should start at column 2 and shrink by one random run."""
+        from src.web.loop import build_plan
+        import yaml
+        with open(CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f)
+        plan = build_plan(cfg, "quick", start_column=1, pre_calibrated=True)
+        self.assertEqual(plan["iterations"][0]["column"], 2)
+        self.assertEqual(plan["n_initial"], 4)
+        self.assertEqual(plan["total_iterations"], 11)
+        self.assertTrue(plan["iterations"][0]["skip_controls"])
+
+    def test_start_preserves_calibration_state(self):
+        loop = _make_loop()
+        loop._calibration_done = True
+        loop._pure_rgbs = {
+            "red": [1.0, 0.0, 0.0],
+            "green": [0.0, 1.0, 0.0],
+            "blue": [0.0, 0.0, 1.0],
+        }
+        loop._water_rgb = [0.5, 0.5, 0.5]
+        loop._gamut = {"samples_rgb": [[1.0, 0.0, 0.0]]}
+        loop._custom_target = [100.0, 50.0, 200.0]
+        loop._cached_reference = {"source_column": 1}
+
+        with mock.patch.object(threading.Thread, "start", return_value=None):
+            loop.start(mode="quick")
+
+        self.assertTrue(loop._calibration_done)
+        self.assertEqual(loop._pure_rgbs["red"], [1.0, 0.0, 0.0])
+        self.assertEqual(loop._water_rgb, [0.5, 0.5, 0.5])
+        self.assertEqual(loop._custom_target, [100.0, 50.0, 200.0])
+        self.assertEqual(loop._cached_reference, {"source_column": 1})
+        self.assertEqual(loop._plan["iterations"][0]["column"], 2)
+        self.assertTrue(loop._plan["iterations"][0]["skip_controls"])
+        self.assertEqual(loop._plan["n_initial"], 4)
+        self.assertEqual(loop._plan["total_iterations"], 11)
+
+    def test_calibration_uses_resolved_grid_path(self):
+        loop = _make_loop(register_dummy_handlers=True)
+        expected_grid_path = os.path.abspath(
+            os.path.join(
+                os.path.dirname(CONFIG_PATH),
+                "calibrations",
+                "cv_calibration",
+                "grid.json",
+            )
+        )
+
+        with mock.patch(
+            "src.web.loop.handle_extract_rgb",
+            return_value={
+                "mean_rgb": [0.0, 0.0, 0.0],
+                "std_rgb": [0.0, 0.0, 0.0],
+                "raw_mean_rgb": [0.0, 0.0, 0.0],
+                "used_calibration": True,
+                "runtime_reference": None,
+            },
+        ) as extract_rgb_mock, mock.patch(
+            "cv2.imread", return_value=np.zeros((8, 8, 3), dtype=np.uint8)
+        ), mock.patch(
+            "src.vision.geometry.load_grid_calibration", return_value=object()
+        ), mock.patch(
+            "src.vision.extraction.extract_well_rgb",
+            side_effect=[
+                np.array([255.0, 0.0, 0.0]),
+                np.array([0.0, 255.0, 0.0]),
+                np.array([0.0, 0.0, 255.0]),
+                np.array([240.0, 240.0, 240.0]),
+            ],
+        ), mock.patch(
+            "src.color.metrics.compute_reachable_gamut",
+            return_value={"samples_rgb": []},
+        ):
+            result = loop.calibrate()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            extract_rgb_mock.call_args[0][0].params["grid_path"],
+            expected_grid_path,
+        )
+        self.assertTrue(loop._calibration_done)
+
+    def test_get_plan_uses_calibrated_start_column(self):
+        loop = _make_loop()
+        loop._calibration_done = True
+        plan = loop.get_plan("quick")
+        self.assertEqual(plan["iterations"][0]["column"], 2)
+        self.assertTrue(plan["iterations"][0]["skip_controls"])
+        self.assertEqual(plan["n_initial"], 4)
+        self.assertEqual(plan["total_iterations"], 11)
+
+    def test_loop_autoloads_saved_color_calibration(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            with open(CONFIG_PATH) as f:
+                cfg = yaml.safe_load(f)
+            config_path = tmpdir / "experiment.yaml"
+            config_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+            cal_dir = tmpdir / "calibrations" / "color_calibration"
+            cal_dir.mkdir(parents=True)
+            payload = {
+                "version": 1,
+                "pure_rgbs": {
+                    "red": [255.0, 0.0, 0.0],
+                    "green": [0.0, 255.0, 0.0],
+                    "blue": [0.0, 0.0, 255.0],
+                },
+                "water_rgb": [240.0, 240.0, 240.0],
+                "gamut": {"samples_rgb": [[255.0, 0.0, 0.0]]},
+                "cached_reference": {"source_column": 1},
+            }
+            (cal_dir / "color_profile.json").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+
+            store = JsonRunStore(base_dir=str(tmpdir / "run_data"))
+            runner = TaskRunner(store=store)
+            for kind in ("use_pipette", "transfer", "mix", "home", "wait"):
+                runner.register_handler(kind, lambda step, ctx=None: {"ok": True})
+            runner.register_handler(
+                "capture",
+                lambda step, ctx=None: {"ok": True, "image_path": "/tmp/fake_capture.jpg"},
+            )
+            loop = ActiveLearningLoop(
+                runner=runner,
+                store=store,
+                config_path=str(config_path),
+            )
+
+            self.assertTrue(loop._calibration_done)
+            self.assertEqual(loop._pure_rgbs["red"], [255.0, 0.0, 0.0])
+            self.assertEqual(loop._water_rgb, [240.0, 240.0, 240.0])
+            self.assertEqual(loop._cached_reference, {"source_column": 1})
+
+    def test_calibration_persists_color_profile(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            with open(CONFIG_PATH) as f:
+                cfg = yaml.safe_load(f)
+            config_path = tmpdir / "experiment.yaml"
+            config_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+            store = JsonRunStore(base_dir=str(tmpdir / "run_data"))
+            runner = TaskRunner(store=store)
+            for kind in ("use_pipette", "transfer", "mix", "home", "wait"):
+                runner.register_handler(kind, lambda step, ctx=None: {"ok": True})
+            runner.register_handler(
+                "capture",
+                lambda step, ctx=None: {"ok": True, "image_path": "/tmp/fake_capture.jpg"},
+            )
+            loop = ActiveLearningLoop(
+                runner=runner,
+                store=store,
+                config_path=str(config_path),
+            )
+
+            with mock.patch(
+                "src.web.loop.handle_extract_rgb",
+                return_value={
+                    "mean_rgb": [0.0, 0.0, 0.0],
+                    "std_rgb": [0.0, 0.0, 0.0],
+                    "raw_mean_rgb": [0.0, 0.0, 0.0],
+                    "used_calibration": True,
+                    "runtime_reference": {"source_column": 1},
+                },
+            ), mock.patch(
+                "cv2.imread", return_value=np.zeros((8, 8, 3), dtype=np.uint8)
+            ), mock.patch(
+                "src.vision.geometry.load_grid_calibration", return_value=object()
+            ), mock.patch(
+                "src.vision.extraction.extract_well_rgb",
+                side_effect=[
+                    np.array([255.0, 0.0, 0.0]),
+                    np.array([0.0, 255.0, 0.0]),
+                    np.array([0.0, 0.0, 255.0]),
+                    np.array([240.0, 240.0, 240.0]),
+                ],
+            ), mock.patch(
+                "src.color.metrics.compute_reachable_gamut",
+                return_value={"samples_rgb": []},
+            ):
+                result = loop.calibrate()
+
+            self.assertTrue(result["ok"])
+            saved_path = tmpdir / "calibrations" / "color_calibration" / "color_profile.json"
+            self.assertTrue(saved_path.exists())
+            saved = json.loads(saved_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["pure_rgbs"]["red"], [255.0, 0.0, 0.0])
+            self.assertEqual(saved["cached_reference"], {"source_column": 1})
+
+    def test_gamut_api_route(self):
+        from starlette.testclient import TestClient
+        from src.web.app import create_protocol_app
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JsonRunStore(base_dir=tmpdir)
+            runner = TaskRunner(store=store)
+            loop = ActiveLearningLoop(runner=runner, store=store, config_path=CONFIG_PATH)
+            app = create_protocol_app(loop)
+            client = TestClient(app)
+            r = client.get("/gamut")
+            self.assertEqual(r.status_code, 200)
+            self.assertFalse(r.json()["calibration_done"])
+
+    def test_robot_calibration_profile_route(self):
+        from starlette.testclient import TestClient
+        from src.web.app import create_protocol_app
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JsonRunStore(base_dir=tmpdir)
+            runner = TaskRunner(store=store)
+            loop = ActiveLearningLoop(runner=runner, store=store, config_path=CONFIG_PATH)
+            app = create_protocol_app(loop)
+            client = TestClient(app)
+            r = client.get("/robot-calibration-profile")
+            self.assertEqual(r.status_code, 200)
+            data = r.json()
+            self.assertIn("targets", data)
+            right_tip = next(t for t in data["targets"] if t["labware_slot"] == "11")
+            self.assertEqual(right_tip["pipette_mount"], "right")
+            self.assertEqual(right_tip["action"], "pick_up_tip")
+
+    def test_set_target_route(self):
+        from starlette.testclient import TestClient
+        from src.web.app import create_protocol_app
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JsonRunStore(base_dir=tmpdir)
+            runner = TaskRunner(store=store)
+            loop = ActiveLearningLoop(runner=runner, store=store, config_path=CONFIG_PATH)
+            app = create_protocol_app(loop)
+            client = TestClient(app)
+            r = client.post("/set-target", json={"rgb": [100, 50, 200]})
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.json()["ok"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,336 @@
+{
+  "id": "f47dc64f-1e0b-4fd9-8bd8-a7acb1e18f08",
+  "name": "Iteration 1 [random] col 1",
+  "status": "paused",
+  "steps": [
+    {
+      "id": "58b26760-189f-4f2b-90b5-1b0071661b1a",
+      "name": "Select left pipette",
+      "kind": "use_pipette",
+      "params": {
+        "mount": "left"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T15:50:33.538271Z",
+      "finished_at": "2026-04-07T15:50:33.539616Z",
+      "duration_seconds": 0.001345,
+      "output": {
+        "active_pipette": "left"
+      },
+      "error": null
+    },
+    {
+      "id": "9bc1a709-f2d6-42eb-8965-a6cc12501f9c",
+      "name": "Control: Red -> A1",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "10",
+        "source_slot": "7",
+        "dest_slot": "1",
+        "tip_well": "A1",
+        "source_well": "A1",
+        "dest_well": "A1",
+        "volume": 200.0,
+        "cleaning_slot": "4",
+        "rinse_well": "A6",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T15:50:33.540405Z",
+      "finished_at": "2026-04-07T15:51:14.490284Z",
+      "duration_seconds": 40.949879,
+      "output": {
+        "transferred": 200.0,
+        "to": "A1"
+      },
+      "error": null
+    },
+    {
+      "id": "0d910411-65e0-4c55-98c7-25e5e664910a",
+      "name": "Control: Green -> B1",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "10",
+        "source_slot": "8",
+        "dest_slot": "1",
+        "tip_well": "B1",
+        "source_well": "A1",
+        "dest_well": "B1",
+        "volume": 200.0,
+        "cleaning_slot": "4",
+        "rinse_well": "A6",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "96abe239-b5b3-4fa3-af91-d733210ab9e0",
+      "name": "Control: Blue -> C1",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "10",
+        "source_slot": "9",
+        "dest_slot": "1",
+        "tip_well": "C1",
+        "source_well": "A1",
+        "dest_well": "C1",
+        "volume": 200.0,
+        "cleaning_slot": "4",
+        "rinse_well": "A6",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "854a33bc-7746-4a68-ac95-01a7a3cb45d1",
+      "name": "Control: Water -> D1",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "10",
+        "source_slot": "5",
+        "dest_slot": "1",
+        "tip_well": "D1",
+        "source_well": "A1",
+        "dest_well": "D1",
+        "volume": 200.0,
+        "cleaning_slot": "4",
+        "rinse_well": "A5",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "090136fd-52c3-4893-9db2-afaa9ad6f33a",
+      "name": "Select right pipette",
+      "kind": "use_pipette",
+      "params": {
+        "mount": "right"
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "c7d4e783-8fab-4653-a21b-e5455f4ac12d",
+      "name": "Exp: Red 67uL -> col1",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "7",
+        "dest_slot": "1",
+        "tip_well": "A1",
+        "source_well": "A1",
+        "dest_well": "A1",
+        "volume": 67.48504886272909,
+        "cleaning_slot": "4",
+        "rinse_well": "A1",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "d28c8272-89e8-4e63-b7e4-cf19244c4414",
+      "name": "Exp: Green 66uL -> col1",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "8",
+        "dest_slot": "1",
+        "tip_well": "A2",
+        "source_well": "A1",
+        "dest_well": "A1",
+        "volume": 65.57578773149811,
+        "cleaning_slot": "4",
+        "rinse_well": "A2",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "4e0d28ef-8b86-44f4-8b92-f42f0f093516",
+      "name": "Exp: Blue 67uL -> col1",
+      "kind": "transfer",
+      "params": {
+        "tiprack_slot": "11",
+        "source_slot": "9",
+        "dest_slot": "1",
+        "tip_well": "A3",
+        "source_well": "A1",
+        "dest_well": "A1",
+        "volume": 66.93916340577285,
+        "cleaning_slot": "4",
+        "rinse_well": "A3",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "e55c9259-4425-42a5-b3c7-874846720475",
+      "name": "Mix col1",
+      "kind": "mix",
+      "params": {
+        "tiprack_slot": "11",
+        "plate_slot": "1",
+        "tip_well": "A4",
+        "mix_well": "A1",
+        "cycles": 2,
+        "volume": 150,
+        "cleaning_slot": "4",
+        "rinse_well": "A4",
+        "rinse_cycles": 2,
+        "rinse_volume": 200.0
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "fd43750a-f997-4d78-b90c-b88eeae71c5c",
+      "name": "Settle 10s",
+      "kind": "wait",
+      "params": {
+        "seconds": 10
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "ba6ae8f2-4398-4014-9397-a49892a90bf9",
+      "name": "Capture col1",
+      "kind": "capture",
+      "params": {
+        "label": "col1_iter1"
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "5191a42b-62ca-4baf-9f4e-a8c1909605ed",
+      "name": "Extract RGB col1",
+      "kind": "extract_rgb",
+      "params": {
+        "image_path": "",
+        "col": 0,
+        "grid_path": "calibrations/cv_calibration/grid.json",
+        "cached_reference": null,
+        "skip_controls": false
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "bf0b9093-6a69-4368-bf4e-e99b918ccd68",
+      "name": "Fit GP iter1",
+      "kind": "fit_gp",
+      "params": {
+        "volumes": [
+          67.48504886272909,
+          65.57578773149811,
+          66.93916340577285
+        ],
+        "observed_rgb": [],
+        "target_rgb": [
+          128.0,
+          0.0,
+          255.0
+        ],
+        "distance_metric": "delta_e_lab",
+        "convergence_threshold": 50.0,
+        "iteration": 0,
+        "all_X": [],
+        "all_Y": [],
+        "all_dist": []
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    }
+  ],
+  "current_step_index": 2,
+  "created_at": "2026-04-07T15:50:33.534194Z",
+  "updated_at": "2026-04-07T15:51:14.493693Z",
+  "metadata": {
+    "iteration": 0,
+    "phase": "random",
+    "col_idx": 0,
+    "volumes": [
+      67.48504886272909,
+      65.57578773149811,
+      66.93916340577285
+    ]
+  },
+  "sequence_id": "3e9a377c-3963-4872-ae55-9def97ba20bb",
+  "eta_seconds": 245.70734400000003
+}

@@ -1,0 +1,314 @@
+{
+  "id": "83143fcf-006d-4ac6-a08b-ca88f1b56c19",
+  "name": "Tip Check",
+  "status": "running",
+  "steps": [
+    {
+      "id": "98d5718d-a8ac-4adf-b4c1-4d1db5bf8bb8",
+      "name": "Select left pipette",
+      "kind": "use_pipette",
+      "params": {
+        "mount": "left"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:21:58.784010Z",
+      "finished_at": "2026-04-07T16:21:58.784657Z",
+      "duration_seconds": 0.000647,
+      "output": {
+        "active_pipette": "left"
+      },
+      "error": null
+    },
+    {
+      "id": "f83570f2-4171-4aec-8316-f30e8ed69d18",
+      "name": "Pick up tip A1 (left)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "10",
+        "well": "A1"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:21:58.785156Z",
+      "finished_at": "2026-04-07T16:22:06.130482Z",
+      "duration_seconds": 7.345326,
+      "output": {
+        "tip": "picked_up"
+      },
+      "error": null
+    },
+    {
+      "id": "d5371bd5-1be6-4f72-971d-ab986d99415b",
+      "name": "Drop tip A1 (left)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:22:06.134681Z",
+      "finished_at": "2026-04-07T16:22:18.620272Z",
+      "duration_seconds": 12.485591,
+      "output": {
+        "tip": "dropped"
+      },
+      "error": null
+    },
+    {
+      "id": "49a2439b-018f-40fd-ad32-100e351689b5",
+      "name": "Pick up tip B1 (left)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "10",
+        "well": "B1"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:22:18.621599Z",
+      "finished_at": "2026-04-07T16:22:25.377932Z",
+      "duration_seconds": 6.756333,
+      "output": {
+        "tip": "picked_up"
+      },
+      "error": null
+    },
+    {
+      "id": "1457ceec-e394-4b0d-9af6-633dad81313e",
+      "name": "Drop tip B1 (left)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:22:25.379953Z",
+      "finished_at": "2026-04-07T16:22:37.865941Z",
+      "duration_seconds": 12.485988,
+      "output": {
+        "tip": "dropped"
+      },
+      "error": null
+    },
+    {
+      "id": "f95d08ca-81ac-4828-afb1-5d019e90c7f6",
+      "name": "Pick up tip C1 (left)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "10",
+        "well": "C1"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:22:37.866978Z",
+      "finished_at": "2026-04-07T16:22:44.580084Z",
+      "duration_seconds": 6.713106,
+      "output": {
+        "tip": "picked_up"
+      },
+      "error": null
+    },
+    {
+      "id": "461a637b-a063-45ee-b291-b98238b0bc7f",
+      "name": "Drop tip C1 (left)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:22:44.581833Z",
+      "finished_at": "2026-04-07T16:22:57.079806Z",
+      "duration_seconds": 12.497973,
+      "output": {
+        "tip": "dropped"
+      },
+      "error": null
+    },
+    {
+      "id": "b1e7c5f1-6899-4fc3-a0ac-58cd3722bdc6",
+      "name": "Pick up tip D1 (left)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "10",
+        "well": "D1"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:22:57.082833Z",
+      "finished_at": "2026-04-07T16:23:03.783415Z",
+      "duration_seconds": 6.700582,
+      "output": {
+        "tip": "picked_up"
+      },
+      "error": null
+    },
+    {
+      "id": "3ed5970a-dcd4-424e-9ccb-355b87062a83",
+      "name": "Drop tip D1 (left)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:23:03.784843Z",
+      "finished_at": "2026-04-07T16:23:16.236121Z",
+      "duration_seconds": 12.451278,
+      "output": {
+        "tip": "dropped"
+      },
+      "error": null
+    },
+    {
+      "id": "97ad4052-c928-4dd4-a439-46b52d03169a",
+      "name": "Select right pipette",
+      "kind": "use_pipette",
+      "params": {
+        "mount": "right"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:23:16.237659Z",
+      "finished_at": "2026-04-07T16:23:16.238100Z",
+      "duration_seconds": 0.000441,
+      "output": {
+        "active_pipette": "right"
+      },
+      "error": null
+    },
+    {
+      "id": "7eb72221-9ea3-455e-9157-e2f522718ff6",
+      "name": "Pick up tip A1 (right)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "11",
+        "well": "A1"
+      },
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:23:16.238468Z",
+      "finished_at": "2026-04-07T16:23:24.737324Z",
+      "duration_seconds": 8.498856,
+      "output": {
+        "tip": "picked_up"
+      },
+      "error": null
+    },
+    {
+      "id": "e7b19608-9040-4204-9cb8-649cd09fa99b",
+      "name": "Drop tip A1 (right)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "succeeded",
+      "started_at": "2026-04-07T16:23:24.739123Z",
+      "finished_at": "2026-04-07T16:23:37.035977Z",
+      "duration_seconds": 12.296854,
+      "output": {
+        "tip": "dropped"
+      },
+      "error": null
+    },
+    {
+      "id": "4dcf47b8-7e82-4ba9-bd9d-74a60a6049e3",
+      "name": "Pick up tip A2 (right)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "11",
+        "well": "A2"
+      },
+      "checkpoint": true,
+      "status": "running",
+      "started_at": "2026-04-07T16:23:37.036950Z",
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "503a6296-4c66-445f-9d83-88aaa8dec67b",
+      "name": "Drop tip A2 (right)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "19a04884-7be5-431b-b8d4-382c5e6be9bb",
+      "name": "Pick up tip A3 (right)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "11",
+        "well": "A3"
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "db54f991-cd7e-4ace-bb73-0a46e5709316",
+      "name": "Drop tip A3 (right)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "936153b8-6578-4944-9027-4b8fd32ff331",
+      "name": "Pick up tip A4 (right)",
+      "kind": "pick_up_tip",
+      "params": {
+        "slot": "11",
+        "well": "A4"
+      },
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "66fd867b-884a-4396-8ae4-fdfc9f3657d2",
+      "name": "Drop tip A4 (right)",
+      "kind": "drop_tip",
+      "params": {},
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    },
+    {
+      "id": "615f5fcf-f237-4ff1-8184-10a7f53ecff4",
+      "name": "Home",
+      "kind": "home",
+      "params": {},
+      "checkpoint": true,
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "duration_seconds": null,
+      "output": null,
+      "error": null
+    }
+  ],
+  "current_step_index": 12,
+  "created_at": "2026-04-07T16:21:58.749836Z",
+  "updated_at": "2026-04-07T16:23:37.036952Z",
+  "metadata": {
+    "type": "tip_check"
+  },
+  "sequence_id": null,
+  "eta_seconds": 55.454637
+}
