@@ -1,17 +1,27 @@
-"""Custom OpenOT2 step handlers for color mixing active learning."""
+"""Custom OpenOT2 step handlers for color mixing active learning.
+
+Each handler is a plain callable ``(step, context) -> dict`` registered
+with the :class:`TaskRunner`.  The runner resolves ``$ref`` bindings in
+``step.params`` *before* calling the handler, so ``image_path`` and
+``observed_rgb`` arrive pre-populated from prior step outputs.
+
+All assay-specific work is delegated to :mod:`src.tasks.color_mixing.api`.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import traceback
 from typing import Any, Dict, Optional
 
 import numpy as np
 
-from src.ml import AcquisitionFunction, create_surrogate, sample_simplex
-from src.color.metrics import color_distance
-from src.vision.extraction import extract_experiment_rgb
+from src.tasks.color_mixing.api import (
+    analyze_capture,
+    CaptureResult,
+    fit_observation,
+)
+from src.tasks.color_mixing.config import load_task_config
 
 logger = logging.getLogger(__name__)
 
@@ -75,17 +85,27 @@ def _deserialize_reference(data: dict):
 def handle_extract_rgb(step, context=None) -> Dict[str, Any]:
     """Extract RGB from a plate image after capture.
 
+    The runner resolves ``image_path`` via ``$ref`` from the capture step
+    before this handler is called, so it arrives ready to use.
+
+    Delegates all image analysis to :func:`analyze_capture` from the
+    task API.
+
     Params expected in ``step.params``:
         image_path : str
-            Path to the captured plate image.
+            Path to the captured plate image (resolved via $ref).
         col : int
             0-based column index.
         grid_path : str
             Path to grid calibration JSON.
+        config_path : str
+            Path to experiment YAML (for loading ColorMixingConfig).
         cached_reference : dict or None
             Serialized :class:`RuntimeReference` from column 1.
         skip_controls : bool
             Whether controls were skipped for this column.
+        is_quick : bool
+            Whether running in quick mode.
 
     Returns a dict with:
         mean_rgb, std_rgb, raw_mean_rgb : list[float]
@@ -95,9 +115,15 @@ def handle_extract_rgb(step, context=None) -> Dict[str, Any]:
     params = step.params if hasattr(step, "params") else step
     image_path: str = params.get("image_path", "")
     col: int = int(params["col"])
+    config_path: str = params.get("config_path", "")
     grid_path: str = params.get("grid_path", "")
     cached_ref_data: Optional[dict] = params.get("cached_reference")
     skip_controls: bool = bool(params.get("skip_controls", False))
+    is_quick: bool = bool(params.get("is_quick", False))
+
+    # Also accept config_path from context if not in params
+    if not config_path and context and isinstance(context, dict):
+        config_path = context.get("config_path", "")
 
     if not image_path:
         return {
@@ -119,16 +145,72 @@ def handle_extract_rgb(step, context=None) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("Could not load grid calibration from %s: %s", grid_path, exc)
 
-    # 1. Extract raw RGB (no internal white balance — calibration handled below)
+    # Deserialize cached reference
+    cached_ref = None
+    if cached_ref_data is not None:
+        try:
+            cached_ref = _deserialize_reference(cached_ref_data)
+        except Exception as exc:
+            logger.warning("Could not deserialize cached reference: %s", exc)
+
+    # Load task config for analyze_capture
+    cfg = None
+    if config_path:
+        try:
+            cfg = load_task_config(config_path)
+        except Exception as exc:
+            logger.warning("Could not load task config from %s: %s", config_path, exc)
+
+    # Delegate to the task API
+    if cfg is not None:
+        try:
+            result: CaptureResult = analyze_capture(
+                image_path=image_path,
+                cfg=cfg,
+                col_idx=col,
+                grid=grid,
+                skip_controls=skip_controls,
+                cached_reference=cached_ref,
+                is_quick=is_quick,
+            )
+            return {
+                "mean_rgb": _to_list(result.mean_rgb),
+                "std_rgb": _to_list(result.std_rgb),
+                "raw_mean_rgb": _to_list(result.raw_mean_rgb),
+                "used_calibration": result.used_calibration,
+                "runtime_reference": _serialize_reference(result.runtime_reference),
+            }
+        except Exception as exc:
+            logger.error("analyze_capture failed: %s", exc)
+            return {
+                "error": str(exc),
+                "traceback": traceback.format_exc(),
+                "mean_rgb": [0.0, 0.0, 0.0],
+                "std_rgb": [0.0, 0.0, 0.0],
+                "raw_mean_rgb": [0.0, 0.0, 0.0],
+                "used_calibration": False,
+                "runtime_reference": None,
+            }
+
+    # Fallback: no config available — use raw extraction only
     try:
-        result = extract_experiment_rgb(
+        from src.vision.extraction import extract_experiment_rgb
+
+        raw_result = extract_experiment_rgb(
             image_path=image_path,
             col=col,
             grid=grid,
             apply_white_balance=False,
         )
+        return {
+            "mean_rgb": _to_list(raw_result["experiment_mean"]),
+            "std_rgb": _to_list(raw_result["experiment_std"]),
+            "raw_mean_rgb": _to_list(raw_result["experiment_mean"]),
+            "used_calibration": False,
+            "runtime_reference": None,
+        }
     except Exception as exc:
-        logger.error("extract_experiment_rgb failed: %s", exc)
+        logger.error("Raw extraction fallback failed: %s", exc)
         return {
             "error": str(exc),
             "traceback": traceback.format_exc(),
@@ -138,68 +220,6 @@ def handle_extract_rgb(step, context=None) -> Dict[str, Any]:
             "used_calibration": False,
             "runtime_reference": None,
         }
-
-    raw_mean = result["experiment_mean"]
-    raw_std = result["experiment_std"]
-
-    # Calibration
-    mean_rgb = raw_mean
-    std_rgb = raw_std
-    used_calibration = False
-    runtime_ref = None
-    runtime_ref_serialized = None
-
-    well_col = col + 1  # 1-based for calibration API
-
-    try:
-        import cv2
-        from src.color.calibration import (
-            extract_labeled_plate,
-            build_runtime_reference,
-            apply_reference_to_column,
-        )
-
-        img = cv2.imread(image_path)
-        if img is not None:
-            plate = extract_labeled_plate(img, grid=grid, cols=[well_col])
-
-            if not skip_controls:
-                # Build fresh reference from this column's controls
-                runtime_ref = build_runtime_reference(plate, col=well_col)
-                calibrated_exp = apply_reference_to_column(
-                    plate, runtime_ref, col=well_col,
-                )
-                if calibrated_exp:
-                    cal_rgb = np.array(list(calibrated_exp.values()))
-                    mean_rgb = cal_rgb.mean(axis=0)
-                    std_rgb = cal_rgb.std(axis=0)
-                    used_calibration = True
-                runtime_ref_serialized = _serialize_reference(runtime_ref)
-
-            elif cached_ref_data is not None:
-                # Reuse cached reference (quick mode)
-                cached_ref = _deserialize_reference(cached_ref_data)
-                calibrated_exp = apply_reference_to_column(
-                    plate, cached_ref, col=well_col,
-                )
-                if calibrated_exp:
-                    cal_rgb = np.array(list(calibrated_exp.values()))
-                    mean_rgb = cal_rgb.mean(axis=0)
-                    std_rgb = cal_rgb.std(axis=0)
-                    used_calibration = True
-        else:
-            logger.warning("Could not reload image %s for calibration", image_path)
-
-    except Exception as exc:
-        logger.warning("Calibration failed: %s — using raw RGB", exc)
-
-    return {
-        "mean_rgb": _to_list(mean_rgb),
-        "std_rgb": _to_list(std_rgb),
-        "raw_mean_rgb": _to_list(raw_mean),
-        "used_calibration": used_calibration,
-        "runtime_reference": runtime_ref_serialized,
-    }
 
 
 # ======================================================================
@@ -227,6 +247,8 @@ def handle_suggest_volumes(step, context=None) -> Dict[str, Any]:
         volumes : list[float]
         phase : str
     """
+    from src.ml import AcquisitionFunction, create_surrogate, sample_simplex
+
     params = step.params if hasattr(step, "params") else step
     target_rgb = np.array(params["target_rgb"], dtype=float)
     total_volume = float(params["total_volume"])
@@ -313,9 +335,12 @@ def handle_suggest_volumes(step, context=None) -> Dict[str, Any]:
 def handle_fit_gp(step, context=None) -> Dict[str, Any]:
     """Update GP history with a new observation, compute distance, check convergence.
 
+    The runner resolves ``observed_rgb`` via ``$ref`` from the extract_rgb
+    step before this handler is called.
+
     Params expected in ``step.params``:
         volumes : list[float]
-        observed_rgb : list[float]
+        observed_rgb : list[float]   (resolved via $ref)
         target_rgb : list[float]
         distance_metric : str
         convergence_threshold : float
@@ -333,6 +358,8 @@ def handle_fit_gp(step, context=None) -> Dict[str, Any]:
         all_Y : updated list
         all_dist : updated list
     """
+    from src.color.metrics import color_distance
+
     params = step.params if hasattr(step, "params") else step
 
     volumes_raw = params.get("volumes", [])

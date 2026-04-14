@@ -1,79 +1,40 @@
 #!/usr/bin/env python3
 """Launch the automation_lab web server.
 
-Starts the OpenOT2 web dashboard with the color mixing protocol
-page mounted at ``/protocol/``.
+Plugin-driven assembly: loads a task plugin, derives config and deck
+from it, then mounts the generic OpenOT2 web shell with the protocol
+sub-app.
 
 Usage::
 
-    python scripts/server.py
-    python scripts/server.py --port 8000
-    python scripts/server.py --no-robot          # UI-only mode for development
-    python scripts/server.py --config configs/experiment.yaml
+    python -m scripts.server
+    python -m scripts.server --port 8000
+    python -m scripts.server --no-robot          # UI-only mode for development
+    python -m scripts.server --config configs/color_mixing.yaml
 """
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
-import yaml
+from openot2.webapp import WebApp
+from openot2.webapp.deck import DeckConfig
 
-# ---------------------------------------------------------------------------
-# Path setup — allow running from the project root without ``pip install -e``
-# ---------------------------------------------------------------------------
-
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "OpenOT2"))
-
-# ---------------------------------------------------------------------------
+from src.tasks.color_mixing.plugin import ColorMixingPlugin
+from src.web.handlers import (
+    handle_extract_rgb,
+    handle_fit_gp,
+    handle_suggest_volumes,
+)
+from src.web.loop import ActiveLearningLoop
+from src.web.app import create_protocol_app
 
 logger = logging.getLogger("automation_lab.server")
 
 
-def _build_deck_config(config: dict):
-    """Translate *experiment.yaml* into an OpenOT2 ``DeckConfig``.
-
-    Returns ``None`` when the config does not contain enough info.
-    """
-    from webapp.deck import DeckConfig  # OpenOT2 package
-
-    labware_section = config.get("labware", {})
-    pipette_section = config.get("pipettes", {})
-
-    pipettes: dict[str, str] = {}
-    for _key, pinfo in pipette_section.items():
-        mount = pinfo.get("mount", _key)
-        pipettes[mount] = pinfo["name"]
-
-    labware: dict[str, str] = {}
-    # Tipracks
-    for tip in labware_section.get("tipracks", []):
-        labware[str(tip["slot"])] = tip["name"]
-    # Source reservoirs (red, green, blue)
-    for _colour, src in labware_section.get("sources", {}).items():
-        labware[str(src["slot"])] = src["name"]
-    # Water reservoir
-    water = labware_section.get("water", {})
-    if water:
-        labware[str(water["slot"])] = water["name"]
-    # Cleaning reservoir
-    cleaning = labware_section.get("cleaning", {})
-    if cleaning:
-        labware[str(cleaning["slot"])] = cleaning["name"]
-    # Dispense plate (may also appear as "plate")
-    for key in ("dispense", "plate"):
-        section = labware_section.get(key, {})
-        if section and str(section.get("slot", "")) not in labware:
-            labware[str(section["slot"])] = section["name"]
-
-    return DeckConfig(pipettes=pipettes, labware=labware)
-
-
 def _autoload_robot_calibration_profile(ot2_app, config_path: Path) -> None:
     """Load the saved robot calibration profile from configs, if present."""
-    from webapp.calibration import CalibrationSession, load_profile
+    from openot2.webapp.calibration import CalibrationSession, load_profile
 
     profile_path = config_path.parent / "calibrations" / "robot_calibration" / "robot_profile.json"
     if not profile_path.exists():
@@ -96,7 +57,7 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument(
         "--config",
-        default="configs/experiment.yaml",
+        default="configs/color_mixing.yaml",
         help="Path to experiment YAML (relative to project root)",
     )
     parser.add_argument(
@@ -111,55 +72,58 @@ def main() -> None:
         format="%(asctime)s  %(name)-28s  %(levelname)-8s  %(message)s",
     )
 
-    # ---- Load experiment config ----
-    config_path = ROOT / args.config
-    with open(config_path) as fh:
-        config = yaml.safe_load(fh)
+    # ---- Load plugin ----
+    plugin = ColorMixingPlugin()
 
-    # ---- Build OpenOT2 WebApp ----
-    from webapp import WebApp  # OpenOT2 package
+    # ---- Load config through plugin ----
+    root = Path(__file__).resolve().parent.parent
+    config_path = root / args.config
+    cfg = plugin.load_config(str(config_path))
 
-    robot_ip = None if args.no_robot else config["robot"]["ip"]
-    deck = _build_deck_config(config)
+    # ---- Build deck through plugin ----
+    robot_ip = None if args.no_robot else cfg.robot_ip
+    deck_dict = plugin.build_deck_config(cfg)
+    deck = DeckConfig(pipettes=deck_dict["pipettes"], labware=deck_dict["labware"])
 
-    clean_cfg = config.get("cleaning", {})
+    # ---- Build OpenOT2 WebApp (generic shell) ----
     ot2_app = WebApp(
         deck=deck,
         robot_ip=robot_ip,
-        rinse_cycles=clean_cfg.get("rinse_cycles", 3),
-        rinse_volume=float(clean_cfg.get("rinse_volume_ul", 200)),
+        plugin=plugin,
+        config_path=str(config_path),
+        rinse_cycles=cfg.cleaning_protocol.rinse_cycles,
+        rinse_volume=float(cfg.cleaning_protocol.rinse_volume_ul),
     )
-    _autoload_robot_calibration_profile(ot2_app, config_path)
+    _autoload_robot_calibration_profile(ot2_app, Path(str(config_path)))
 
-    # ---- Register custom step handlers ----
-    from src.web.handlers import (
-        handle_extract_rgb,
-        handle_fit_gp,
-        handle_suggest_volumes,
-    )
-
+    # ---- Register task step handlers ----
     ot2_app.register_handler("extract_rgb", handle_extract_rgb)
     ot2_app.register_handler("suggest_volumes", handle_suggest_volumes)
     ot2_app.register_handler("fit_gp", handle_fit_gp)
 
-    # ---- Create the active-learning loop manager ----
-    from src.web.loop import ActiveLearningLoop
-
+    # ---- Create the plugin-driven active-learning loop ----
     loop_manager = ActiveLearningLoop(
         runner=ot2_app.runner,
         store=ot2_app.store,
+        plugin=plugin,
+        config=cfg,
         config_path=str(config_path),
     )
     ot2_app.handlers.progress_callback = loop_manager.update_live_progress
 
     # ---- Mount protocol sub-app ----
-    from src.web.app import create_protocol_app
-
     nav_link = {"title": "Protocol", "path": "/protocol/", "icon": "&#9883;"}
     ot2_app.add_nav_link(**nav_link)
     # Pass the same nav_links to the sub-app so it renders the sidebar correctly
     protocol_app = create_protocol_app(loop_manager, nav_links=ot2_app._nav_links)
     ot2_app.mount_app("/protocol", protocol_app)
+
+    # ---- Attach task web extension if present ----
+    ext = plugin.web_extension(cfg)
+    if ext is not None:
+        routes = ext.extra_routes()
+        if routes is not None:
+            ot2_app.mount_app("/task", routes)
 
     # ---- Serve ----
     logger.info(

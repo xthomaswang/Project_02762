@@ -1,0 +1,178 @@
+# ==========================================================================
+# Color Mixing Task — Canonical Configuration
+#
+# Role-driven deck layout.  Slot numbers appear ONLY here.
+# Code references roles (reagent, tiprack, plate, cleaning) — never slots.
+#
+# Usage:
+#   python scripts/run_experiment.py --config configs/color_mixing.yaml
+# ==========================================================================
+
+task: color_mixing
+
+# --------------------------------------------------------------------------
+# Optimization target & search space
+# --------------------------------------------------------------------------
+target_color: [128, 0, 255]          # RGB 0-255
+total_volume_ul: 200                 # Vr + Vg + Vb = 200
+volume_bounds:
+  min: [0, 0, 0]
+  max: [200, 200, 200]
+convergence_threshold: 50            # stop when distance < this
+seed: 42
+
+# --------------------------------------------------------------------------
+# Robot connection
+# --------------------------------------------------------------------------
+robot:
+  ip: "169.254.8.56"
+  port: 31950
+
+# --------------------------------------------------------------------------
+# Pipettes
+# --------------------------------------------------------------------------
+pipettes:
+  left:
+    name: "p300_single_gen2"         # 1-channel — controls
+  right:
+    name: "p300_multi_gen2"          # 8-channel — experiments (4 tips E-H)
+
+# --------------------------------------------------------------------------
+# Deck layout (role-driven)
+#
+#   Back:   [10 tiprack-L] [11 tiprack-R] [Trash]
+#           [ 7 red       ] [ 8 green    ] [ 9 blue  ]
+#           [ 4 cleaning  ] [ 5 water    ] [ 6 empty ]
+#   Front:  [ 1 plate     ] [ 2 empty    ] [ 3 empty ]
+# --------------------------------------------------------------------------
+deck:
+  plate:
+    labware: "corning_96_wellplate_360ul_flat"
+    slot: "1"
+
+  reagents:
+    red:
+      labware: "nest_12_reservoir_15ml"
+      slot: "7"
+      well: "A1"
+    green:
+      labware: "nest_12_reservoir_15ml"
+      slot: "8"
+      well: "A1"
+    blue:
+      labware: "nest_12_reservoir_15ml"
+      slot: "9"
+      well: "A1"
+    water:
+      labware: "nest_12_reservoir_15ml"
+      slot: "5"
+      well: "A1"
+
+  cleaning:
+    labware: "nest_12_reservoir_15ml"
+    slot: "4"
+    rinse_wells:
+      red:     "A1"
+      green:   "A2"
+      blue:    "A3"
+      mix:     "A4"
+      control: "A6"
+
+  tipracks:
+    right:
+      labware: "opentrons_96_filtertiprack_200ul"
+      slot: "11"
+      tip_columns:                   # 8-channel tip-column assignments
+        red:   1
+        green: 2
+        blue:  3
+        mix:   4
+    left:
+      labware: "opentrons_96_filtertiprack_200ul"
+      slot: "10"
+      tip_wells:                     # single-channel tip-well assignments
+        red:   "A1"
+        green: "B1"
+        blue:  "C1"
+        water: "D1"
+
+# --------------------------------------------------------------------------
+# Well layout (role-driven)
+#
+# Controls occupy rows A-D; experiments occupy rows E-H.
+# Change these to remap the plate without touching code.
+# --------------------------------------------------------------------------
+well_roles:
+  controls:
+    A: red
+    B: green
+    C: blue
+    D: water
+  experiment_rows: [E, F, G, H]
+  control_volume_ul: 200
+
+# --------------------------------------------------------------------------
+# Experiment protocol
+# --------------------------------------------------------------------------
+experiment:
+  n_initial: 5                       # random exploration columns
+  n_optimization: 7                  # Bayesian optimization columns
+  max_per_plate: 12
+  settle_time_seconds: 10
+  mix_cycles: 3
+  mix_volume_ul: 150
+  batch_mode: false
+
+# --------------------------------------------------------------------------
+# Cleaning
+# --------------------------------------------------------------------------
+cleaning:
+  enabled: true
+  rinse_cycles: 3
+  rinse_volume_ul: 200
+
+# --------------------------------------------------------------------------
+# ML (Gaussian Process surrogate)
+# --------------------------------------------------------------------------
+ml:
+  model: "correlated_gp"            # or "independent_gp"
+  acquisition: "EI"                  # or "UCB"
+  distance_metric: "delta_e_lab"     # or "rgb_euclidean"
+
+# --------------------------------------------------------------------------
+# Camera
+# --------------------------------------------------------------------------
+camera:
+  device_id: 0
+  width: 1920
+  height: 1080
+  warmup_frames: 10
+
+# --------------------------------------------------------------------------
+# Calibration
+# --------------------------------------------------------------------------
+calibration:
+  grid_path: "calibrations/cv_calibration/grid.json"
+  roi_scale: 0.35
+
+# --------------------------------------------------------------------------
+# Imaging park position
+# --------------------------------------------------------------------------
+imaging:
+  park:
+    slot: "11"
+    well: "A1"
+    offset: [0.0, 0.0, 30.0]
+
+# --------------------------------------------------------------------------
+# Output
+# --------------------------------------------------------------------------
+output:
+  base_dir: "data"
+
+# --------------------------------------------------------------------------
+# Precheck
+# --------------------------------------------------------------------------
+precheck:
+  robot_timeout: 5.0
+  max_camera_id: 10

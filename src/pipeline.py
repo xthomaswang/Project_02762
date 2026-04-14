@@ -1,21 +1,9 @@
 """
-End-to-end active learning loop for colorimetric assay optimization.
+Thin orchestration layer for active learning experiments.
 
-Orchestrates: ML suggests volumes → robot dispenses (controls + experiments)
-→ camera captures → color extracted → ML updates → repeat.
-
-Per-column protocol (8 steps):
-  Phase 1 (controls, left single-channel):
-    1. Red   → row A
-    2. Green → row B
-    3. Blue  → row C
-    4. Water → row D
-  Phase 2 (experiment, right 8-channel with 4 tips E-H):
-    5. Red   (Vr µL) → rows E-H
-    6. Green (Vg µL) → rows E-H
-    7. Blue  (Vb µL) → rows E-H
-    8. Mix   → rows E-H
-  Phase 3: settle → image → extract RGB → update GPs
+All color-mixing-specific logic (deck layout, control/experiment well
+mapping, calibration) lives in :mod:`src.tasks.color_mixing`.  This
+module only wires together: config → robot → task API → ML loop.
 """
 
 import os
@@ -24,7 +12,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-import yaml
 
 from openot2 import OT2Client, OT2Operations
 
@@ -33,19 +20,26 @@ from src.ml import (
     create_surrogate,
     sample_simplex,
 )
-from src.vision.extraction import extract_experiment_rgb
 from src.color.metrics import color_distance
 from src.color.calibration import (
-    RuntimeReference,
-    build_runtime_reference,
-    apply_reference_to_column,
-    extract_labeled_plate,
-    summarize_column,
-    write_measurements_csv,
     ColumnSummary,
+    RuntimeReference,
+    write_measurements_csv,
 )
 from src.vision.geometry import AnyGrid, load_grid_calibration
 from src.robot import ParkPosition, resolve_park_position, park_for_imaging
+
+from src.tasks.color_mixing.config import ColorMixingConfig
+from src.tasks.color_mixing.plugin import ColorMixingPlugin
+from src.tasks.color_mixing.api import (
+    build_iteration_steps,
+    execute_steps,
+    analyze_capture,
+    fit_observation,
+    build_robot_calibration_profile,
+    CaptureResult,
+    DeckProfile,
+)
 
 
 # ======================================================================
@@ -67,58 +61,46 @@ def run_active_learning_loop(
     """
     Main active learning loop.
 
+    Delegates all assay-specific logic to src.tasks.color_mixing.
+
     Args:
-        config_path: Path to experiment YAML config.
+        config_path: Path to color mixing YAML config.
         robot: OT2Client instance (created from config if None).
         n_initial: Override config's experiment.n_initial.
         n_iterations: Override config's experiment.n_optimization.
         acquisition_kind: Override config's ml.acquisition.
-        start_column: Column index to start from (0-based). Use this to
-            resume after manually running some columns.
-        seed_X: (n, 3) array of prior volume observations to seed the GP.
-        seed_Y: (n, 3) array of prior RGB observations to seed the GP.
-        mode: "full" (default) — use all config values as-is.
-            "quick" — fewer rinses, fewer randoms, skip repeat controls.
-            Quick mode is opt-in only.
-        grid_calibration: Optional PlateGrid for well extraction. If None,
-            attempts to load from config calibration.grid_path, then
-            falls back to DEFAULT_GRID.
+        start_column: Column index to start from (0-based).
+        seed_X: (n, 3) prior volume observations.
+        seed_Y: (n, 3) prior RGB observations.
+        mode: "full" or "quick".
+        grid_calibration: Optional PlateGrid for well extraction.
     """
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    plugin = ColorMixingPlugin()
+    cfg = plugin.load_config(config_path)
 
-    # --- Parse config ---
-    target_rgb = np.array(config["target_color"], dtype=float)
-    total_volume = float(config["total_volume_ul"])
-    convergence_threshold = float(
-        config.get("convergence_threshold")
-        or config.get("convergence", {}).get("rgb_distance_threshold", 50)
-    )
-    seed = config.get("seed", 42)
+    # --- Parse overrides ---
+    target_rgb = np.array(cfg.target_color, dtype=float)
+    total_volume = cfg.total_volume_ul
+    convergence_threshold = cfg.convergence_threshold
+    seed = cfg.seed
 
-    bounds_cfg = config["volume_bounds"]
-    bounds = np.array([bounds_cfg["min"], bounds_cfg["max"]], dtype=float)
+    bounds = np.array([cfg.volume_bounds_min, cfg.volume_bounds_max], dtype=float)
 
-    exp_cfg = config.get("experiment", {})
-    n_initial_explicit = n_initial  # Save whether user passed it explicitly
-    n_initial = n_initial or exp_cfg.get("n_initial", 5)
-    n_opt = n_iterations or exp_cfg.get("n_optimization", 7)
-    max_per_plate = exp_cfg.get("max_per_plate", 12)
-    batch_mode = exp_cfg.get("batch_mode", True)
+    n_initial_explicit = n_initial
+    n_initial = n_initial or cfg.experiment.n_initial
+    n_opt = n_iterations or cfg.experiment.n_optimization
+    max_per_plate = cfg.experiment.max_per_plate
+    batch_mode = cfg.experiment.batch_mode
 
-    ml_cfg = config.get("ml", {})
-    model_type = ml_cfg.get("model", "correlated_gp")
-    acq_kind = acquisition_kind or ml_cfg.get("acquisition", "EI")
-    distance_metric = ml_cfg.get("distance_metric", "rgb_euclidean")
-
-    output_cfg = config.get("output", {})
-    base_dir = output_cfg.get("base_dir", "data")
+    acq_kind = acquisition_kind or cfg.ml.acquisition
+    distance_metric = cfg.ml.distance_metric
+    base_dir = cfg.output_base_dir
 
     # --- Quick mode overrides ---
-    quick_overrides = {}
+    quick_overrides: Dict[str, Any] = {}
     if mode == "quick":
         if n_initial_explicit is None:
-            n_initial = 5 # i random exploration experiments
+            n_initial = 5
         quick_overrides["rinse_cycles"] = 1
         quick_overrides["mix_cycles"] = 2
         quick_overrides["skip_controls_after_first"] = True
@@ -128,26 +110,19 @@ def run_active_learning_loop(
         print(f"  [FULL MODE] Using config values as-is")
 
     # --- Resolve grid calibration ---
-    config_dir = os.path.dirname(os.path.abspath(config_path))
     if grid_calibration is None:
-        cal_cfg = config.get("calibration", {})
-        grid_path = cal_cfg.get("grid_path")
-        if grid_path:
-            if not os.path.isabs(grid_path):
-                grid_path = os.path.join(config_dir, grid_path)
-            if os.path.exists(grid_path):
-                grid_calibration = load_grid_calibration(grid_path)
+        grid_path = cfg.resolve_path(cfg.calibration.grid_path)
+        if os.path.exists(grid_path):
+            grid_calibration = load_grid_calibration(grid_path)
 
     # --- Initialize robot ---
     if robot is None:
-        robot_cfg = config.get("robot", {})
-        robot = OT2Client(
-            robot_ip=robot_cfg.get("ip", "169.254.8.56"),
-            port=robot_cfg.get("port", 31950),
-        )
+        robot = OT2Client(robot_ip=cfg.robot_ip, port=cfg.robot_port)
 
     # --- Initialize ML ---
-    surrogate = create_surrogate(model_type=model_type, bounds=bounds, total_volume=total_volume)
+    surrogate = create_surrogate(
+        model_type=cfg.ml.model, bounds=bounds, total_volume=total_volume,
+    )
     acq = AcquisitionFunction(
         kind=acq_kind,
         target_rgb=target_rgb,
@@ -156,26 +131,31 @@ def run_active_learning_loop(
     )
 
     # --- Setup robot run ---
-    clean_cfg = config.get("cleaning", {})
-    rinse_cycles = quick_overrides.get("rinse_cycles", clean_cfg.get("rinse_cycles", 3))
+    rinse_cycles = quick_overrides.get("rinse_cycles", cfg.cleaning_protocol.rinse_cycles)
     ops = OT2Operations(
         client=robot,
         rinse_cycles=rinse_cycles,
-        rinse_volume=clean_cfg.get("rinse_volume_ul", 250),
+        rinse_volume=cfg.cleaning_protocol.rinse_volume_ul,
     )
 
-    robot_run_id = robot.create_run()
-    labware_ids = _load_all_labware(robot, config)
+    robot.create_run()
+    profile = build_robot_calibration_profile(cfg, robot)
 
-    # Human-readable local folder name: <experiment_name>_YYYYMMDD_HHMMSS
-    exp_name = config.get("metadata", {}).get("name", "run")
+    exp_name = "color_mixing"
     run_id = f"{exp_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     # --- Resolve imaging park position ---
     try:
-        park_pos = resolve_park_position(config, robot)
+        park_pos = resolve_park_position(
+            {"imaging": {"park": {
+                "slot": cfg.park.slot,
+                "well": cfg.park.well,
+                "offset": list(cfg.park.offset),
+            }}},
+            robot,
+        )
     except ValueError:
-        park_pos = None  # fall back to home() if park slot not loaded
+        park_pos = None
 
     # --- Data storage ---
     all_X: List[np.ndarray] = []
@@ -183,9 +163,9 @@ def run_active_learning_loop(
     all_dist: List[float] = []
     log_rows: List[Dict] = []
     all_summaries: List[ColumnSummary] = []
-    cached_reference: Optional[RuntimeReference] = None  # quick-mode reuse
+    cached_reference: Optional[RuntimeReference] = None
 
-    # --- Load seed data (from prior manual experiments) ---
+    # --- Load seed data ---
     if seed_X is not None and seed_Y is not None:
         seed_X = np.atleast_2d(seed_X)
         seed_Y = np.atleast_2d(seed_Y)
@@ -227,8 +207,9 @@ def run_active_learning_loop(
 
         skip_controls = (quick_overrides.get("skip_controls_after_first", False)
                          and col_idx > start_column)
-        exp_result = _run_single_experiment(
-            ops, config, labware_ids, volumes, col_idx, run_id, base_dir,
+
+        result = _run_single_iteration(
+            cfg, ops, profile, volumes, col_idx, run_id, base_dir,
             skip_controls=skip_controls,
             mix_cycles_override=quick_overrides.get("mix_cycles"),
             grid=grid_calibration,
@@ -236,21 +217,21 @@ def run_active_learning_loop(
             cached_reference=cached_reference,
             is_quick=(mode == "quick"),
         )
-        observed_rgb = exp_result["mean_rgb"]
+        observed_rgb = result.mean_rgb
         dist = color_distance(observed_rgb, target_rgb, distance_metric)
 
         all_X.append(volumes)
         all_Y.append(observed_rgb)
         all_dist.append(dist)
-        if "summary" in exp_result:
-            all_summaries.append(exp_result["summary"])
-        if "runtime_reference" in exp_result and cached_reference is None:
-            cached_reference = exp_result["runtime_reference"]
+        if result.summary is not None:
+            all_summaries.append(result.summary)
+        if result.runtime_reference is not None and cached_reference is None:
+            cached_reference = result.runtime_reference
         _log_iteration(log_rows, i, col_idx, volumes, observed_rgb, dist, "random")
 
         _display_iteration(
             iteration=i, phase="random", col_idx=col_idx,
-            volumes=volumes, exp_result=exp_result, target_rgb=target_rgb,
+            volumes=volumes, result=result, target_rgb=target_rgb,
             all_dist=all_dist, distance_metric=distance_metric,
         )
 
@@ -280,8 +261,9 @@ def run_active_learning_loop(
         print(f"    Suggested: Vr={volumes[0]:.1f}, Vg={volumes[1]:.1f}, Vb={volumes[2]:.1f}")
 
         skip_controls = quick_overrides.get("skip_controls_after_first", False)
-        exp_result = _run_single_experiment(
-            ops, config, labware_ids, volumes, col_idx, run_id, base_dir,
+
+        result = _run_single_iteration(
+            cfg, ops, profile, volumes, col_idx, run_id, base_dir,
             skip_controls=skip_controls,
             mix_cycles_override=quick_overrides.get("mix_cycles"),
             grid=grid_calibration,
@@ -289,21 +271,21 @@ def run_active_learning_loop(
             cached_reference=cached_reference,
             is_quick=(mode == "quick"),
         )
-        observed_rgb = exp_result["mean_rgb"]
+        observed_rgb = result.mean_rgb
         dist = color_distance(observed_rgb, target_rgb, distance_metric)
 
         all_X.append(volumes)
         all_Y.append(observed_rgb)
         all_dist.append(dist)
-        if "summary" in exp_result:
-            all_summaries.append(exp_result["summary"])
-        if "runtime_reference" in exp_result and cached_reference is None:
-            cached_reference = exp_result["runtime_reference"]
+        if result.summary is not None:
+            all_summaries.append(result.summary)
+        if result.runtime_reference is not None and cached_reference is None:
+            cached_reference = result.runtime_reference
         _log_iteration(log_rows, n_initial + i, col_idx, volumes, observed_rgb, dist, "bo")
 
-        surrogate.update(volumes.reshape(1, 3), observed_rgb.reshape(1, 3))
+        fit_observation(surrogate, volumes, observed_rgb)
 
-        # Preview next suggestion for display (if not last iteration)
+        # Preview next suggestion
         next_volumes = None
         if i < n_opt - 1 and dist >= convergence_threshold:
             try:
@@ -314,7 +296,7 @@ def run_active_learning_loop(
 
         _display_iteration(
             iteration=n_initial + i, phase="bo", col_idx=col_idx,
-            volumes=volumes, exp_result=exp_result, target_rgb=target_rgb,
+            volumes=volumes, result=result, target_rgb=target_rgb,
             all_dist=all_dist, surrogate=surrogate, next_volumes=next_volumes,
             distance_metric=distance_metric,
         )
@@ -340,7 +322,6 @@ def run_active_learning_loop(
     run_folder = os.path.join(base_dir, "runs", run_id)
     _save_results_csv(log_rows, run_folder)
 
-    # Save color calibration measurements if available
     if all_summaries:
         results_dir = os.path.join(run_folder, "results")
         os.makedirs(results_dir, exist_ok=True)
@@ -353,13 +334,13 @@ def run_active_learning_loop(
 
 
 # ======================================================================
-# Single experiment execution
+# Single iteration (thin wrapper over task API)
 # ======================================================================
 
-def _run_single_experiment(
+def _run_single_iteration(
+    cfg: ColorMixingConfig,
     ops: OT2Operations,
-    config: Dict[str, Any],
-    labware_ids: Dict[str, Any],
+    profile: DeckProfile,
     volumes: np.ndarray,
     col_idx: int,
     run_id: str,
@@ -370,112 +351,29 @@ def _run_single_experiment(
     park_pos: Optional[ParkPosition] = None,
     cached_reference: Optional[RuntimeReference] = None,
     is_quick: bool = False,
-) -> Dict[str, Any]:
-    """
-    Execute one complete experiment for a single column.
-
-    Args:
-        skip_controls: If True, skip Phase 1 (control dispensing) to save time.
-        mix_cycles_override: Override mix cycles from config (e.g. 2 for quick mode).
-        park_pos: Park position for imaging (uses home() if None).
-        cached_reference: Cached first-column RuntimeReference for quick-mode reuse.
-        is_quick: True when running in quick mode.
-
-    Returns:
-        Dict with keys:
-            "mean_rgb": (3,) mean RGB across experiment replicates
-            "std_rgb": (3,) std RGB across experiment replicates
-            "experiment_rgb": (4, 3) raw per-replicate RGB
-            "calibrated_experiment_rgb": (4, 3) RGB used for optimization
-            "control_rgb": dict mapping row label -> (3,) RGB
-            "image_path": path to captured plate image
-            "summary": ColumnSummary (if a summary could be built)
-            "runtime_reference": RuntimeReference (if built from this column)
-            "used_calibration": whether calibrated_experiment_rgb differs from raw
-            "reference_source_column": source column for the active reference
-            "calibration_warning": explicit fallback reason, if any
-    """
-    exp_cfg = config.get("experiment", {})
-    settle_time = exp_cfg.get("settle_time_seconds", 45)
-    mix_cycles = mix_cycles_override or exp_cfg.get("mix_cycles", 3)
-    mix_volume = exp_cfg.get("mix_volume_ul", 200)
-
-    well_col = col_idx + 1  # 1-based for well naming
-    Vr, Vg, Vb = float(volumes[0]), float(volumes[1]), float(volumes[2])
-
-    cleaning_id = labware_ids["cleaning_id"]
+) -> CaptureResult:
+    """Execute one column: dispense → settle → image → extract."""
+    settle_time = cfg.experiment.settle_time_seconds
     robot = ops.client
 
-    # ---- Phase 1: Control dispensing (left single-channel) ----
+    well_col = col_idx + 1
+
+    # ---- Dispense (steps from task API) ----
     if skip_controls:
         print(f"  [Phase 1] Controls SKIPPED (quick mode)")
     else:
         print(f"  [Phase 1] Controls (column {well_col})")
-        robot.use_pipette("left")
 
-        controls = [
-            ("red",   labware_ids["red_source_id"],   "A1", f"A{well_col}", "A1"),
-            ("green", labware_ids["green_source_id"], "A1", f"B{well_col}", "B1"),
-            ("blue",  labware_ids["blue_source_id"],  "A1", f"C{well_col}", "C1"),
-            ("water", labware_ids["water_source_id"], "A1", f"D{well_col}", "D1"),
-        ]
-
-        control_volume = float(config.get("total_volume_ul", 200))
-
-        for dye_name, source_id, src_well, dest_well, tip_well in controls:
-            ops.transfer(
-                tiprack_id=labware_ids["tiprack_left_id"],
-                source_id=source_id,
-                dest_id=labware_ids["dispense_id"],
-                tip_well=tip_well,
-                source_well=src_well,
-                dest_well=dest_well,
-                volume=control_volume,
-                cleaning_id=cleaning_id,
-                rinse_col=_get_control_rinse_col(dye_name, config),
-            )
-
-    # ---- Phase 2: Experiment dispensing (right 8-channel) ----
     print(f"  [Phase 2] Experiments (column {well_col})")
-    robot.use_pipette("right")
 
-    dye_transfers = [
-        ("red",   labware_ids["red_source_id"],   "A1", 1, Vr, "A1"),
-        ("green", labware_ids["green_source_id"], "A1", 2, Vg, "A2"),
-        ("blue",  labware_ids["blue_source_id"],  "A1", 3, Vb, "A3"),
-    ]
-
-    for dye_name, source_id, src_well, tip_col, vol, rinse_col in dye_transfers:
-        if vol < 1.0:
-            print(f"    Skipping {dye_name} (volume {vol:.1f} µL < 1.0)")
-            continue
-        ops.transfer(
-            tiprack_id=labware_ids["tiprack_right_id"],
-            source_id=source_id,
-            dest_id=labware_ids["dispense_id"],
-            tip_well=f"A{tip_col}",
-            source_well=src_well,
-            dest_well=f"A{well_col}",
-            volume=vol,
-            cleaning_id=cleaning_id,
-            rinse_col=rinse_col,
-        )
-
-    # Mixing step
-    ops.mix(
-        tiprack_id=labware_ids["tiprack_right_id"],
-        labware_id=labware_ids["dispense_id"],
-        tip_well="A4",
-        mix_well=f"A{well_col}",
-        cycles=mix_cycles,
-        volume=mix_volume,
-        cleaning_id=cleaning_id,
-        rinse_col="A4",
+    steps = build_iteration_steps(
+        cfg, volumes, col_idx,
+        skip_controls=skip_controls,
+        mix_cycles_override=mix_cycles_override,
     )
+    execute_steps(steps, profile, ops)
 
-    # ---- Phase 3: Settle + Park + Image + Extract RGB ----
-    # Start settle clock immediately after final liquid step.
-    # Park motion counts toward settle time.
+    # ---- Settle + Park + Image ----
     settle_start = time.monotonic()
 
     if park_pos is not None:
@@ -485,180 +383,31 @@ def _run_single_experiment(
         print(f"  [Phase 3] Homing + settling ({settle_time}s) + imaging")
         robot.home()
 
-    # Sleep only the remaining settle time after the park/home motion
     elapsed = time.monotonic() - settle_start
     remaining = max(0, settle_time - elapsed)
     if remaining > 0:
         time.sleep(remaining)
 
-    image_path = _capture_plate_image(config, run_id, col_idx, base_dir)
+    image_path = _capture_plate_image(cfg, run_id, col_idx, base_dir)
 
-    # Always extract raw (no white balance) to avoid D-row dependency
-    result = extract_experiment_rgb(
+    # ---- Analyze capture (task API) ----
+    result = analyze_capture(
         image_path=image_path,
-        col=col_idx,
-        experiment_rows=config.get("well_layout", {}).get("experiment_rows", ["E", "F", "G", "H"]),
-        control_rows=config.get("well_layout", {}).get("control_rows", ["A", "B", "C", "D"]),
+        cfg=cfg,
+        col_idx=col_idx,
         grid=grid,
-        apply_white_balance=False,
+        skip_controls=skip_controls,
+        cached_reference=cached_reference,
+        is_quick=is_quick,
     )
 
-    raw_mean = result["experiment_mean"]
-    raw_std = result["experiment_std"]
+    if result.calibration_warning is not None:
+        print(f"    [WARNING] {result.calibration_warning}")
 
-    # ---- Color calibration (runtime, control-driven) ----
-    # Use calibrated values for optimization when available so that all
-    # columns are in the same color coordinate system.
-    col_summary = None
-    runtime_ref = None
-    mean_rgb = raw_mean
-    std_rgb = raw_std
-    calibrated_exp_rgb = result["experiment_rgb"]
-    used_calibration = False
-    reference_source_column = None
-    calibration_warning: Optional[str] = None
+    print(f"    Mean RGB: ({result.mean_rgb[0]:.0f}, {result.mean_rgb[1]:.0f}, {result.mean_rgb[2]:.0f}) "
+          f"± ({result.std_rgb[0]:.1f}, {result.std_rgb[1]:.1f}, {result.std_rgb[2]:.1f})")
 
-    plate = None
-    try:
-        import cv2 as _cv2
-        _img = _cv2.imread(image_path)
-        if _img is None:
-            calibration_warning = (
-                f"Could not reload {image_path} for calibration; using raw RGB."
-            )
-        else:
-            plate = extract_labeled_plate(_img, grid=grid, cols=[well_col])
-    except Exception as exc:
-        calibration_warning = (
-            f"Calibration setup failed for column {well_col}: {exc}; using raw RGB."
-        )
-
-    if plate is not None:
-        try:
-            if not skip_controls:
-                runtime_ref = build_runtime_reference(plate, col=well_col)
-                calibrated_exp = apply_reference_to_column(
-                    plate, runtime_ref, col=well_col,
-                )
-                reference_source_column = runtime_ref.source_column
-            elif is_quick and cached_reference is not None:
-                calibrated_exp = apply_reference_to_column(
-                    plate, cached_reference, col=well_col,
-                )
-                reference_source_column = cached_reference.source_column
-                print(
-                    f"    [QUICK] Using cached reference from column "
-                    f"{cached_reference.source_column}"
-                )
-            else:
-                calibrated_exp = None
-                calibration_warning = (
-                    f"No calibration reference available for column {well_col}; "
-                    "using raw RGB."
-                )
-
-            if calibrated_exp:
-                calibrated_exp_rgb = np.array(list(calibrated_exp.values()))
-                mean_rgb = calibrated_exp_rgb.mean(axis=0)
-                std_rgb = calibrated_exp_rgb.std(axis=0)
-                used_calibration = True
-                calibration = (
-                    runtime_ref.calibration
-                    if runtime_ref is not None
-                    else cached_reference.calibration
-                )
-                col_summary = summarize_column(
-                    plate, col=well_col, calibration=calibration,
-                )
-            elif col_summary is None:
-                col_summary = summarize_column(plate, col=well_col, calibration=None)
-        except Exception as exc:
-            calibration_warning = (
-                f"Calibration failed for column {well_col}: {exc}; using raw RGB."
-            )
-            if col_summary is None:
-                try:
-                    col_summary = summarize_column(plate, col=well_col, calibration=None)
-                except Exception:
-                    col_summary = None
-
-    if calibration_warning is not None:
-        print(f"    [WARNING] {calibration_warning}")
-
-    print(f"    Mean RGB: ({mean_rgb[0]:.0f}, {mean_rgb[1]:.0f}, {mean_rgb[2]:.0f}) "
-          f"± ({std_rgb[0]:.1f}, {std_rgb[1]:.1f}, {std_rgb[2]:.1f})")
-
-    out: Dict[str, Any] = {
-        "mean_rgb": mean_rgb,
-        "std_rgb": std_rgb,
-        "raw_mean_rgb": raw_mean,
-        "raw_std_rgb": raw_std,
-        "experiment_rgb": result["experiment_rgb"],
-        "calibrated_experiment_rgb": calibrated_exp_rgb,
-        "control_rgb": result["control_rgb"],
-        "image_path": image_path,
-        "used_calibration": used_calibration,
-        "reference_source_column": reference_source_column,
-        "calibration_warning": calibration_warning,
-    }
-    if col_summary is not None:
-        out["summary"] = col_summary
-    if runtime_ref is not None:
-        out["runtime_reference"] = runtime_ref
-    return out
-
-
-# ======================================================================
-# Setup helpers (experiment-specific config parsing)
-# ======================================================================
-
-def _load_all_labware(robot: OT2Client, config: Dict[str, Any]) -> Dict[str, Any]:
-    """Load all pipettes and labware from experiment config."""
-    ids: Dict[str, Any] = {}
-
-    pip_cfg = config["pipettes"]
-    ids["right_pipette_id"] = robot.load_pipette(pip_cfg["right"]["name"], "right")
-    ids["left_pipette_id"] = robot.load_pipette(pip_cfg["left"]["name"], "left")
-
-    lab_cfg = config["labware"]
-    for tr in lab_cfg["tipracks"]:
-        lw_id = robot.load_labware(tr["name"], tr["slot"])
-        key = "tiprack_right_id" if tr["for"] == "right" else "tiprack_left_id"
-        ids[key] = lw_id
-
-    # Separate dye reservoirs (slots 7, 8, 9)
-    src_cfg = lab_cfg["sources"]
-    ids["red_source_id"] = robot.load_labware(src_cfg["red"]["name"], src_cfg["red"]["slot"])
-    ids["green_source_id"] = robot.load_labware(src_cfg["green"]["name"], src_cfg["green"]["slot"])
-    ids["blue_source_id"] = robot.load_labware(src_cfg["blue"]["name"], src_cfg["blue"]["slot"])
-
-    # Pure water reservoir (slot 5)
-    water_cfg = lab_cfg["water"]
-    ids["water_source_id"] = robot.load_labware(water_cfg["name"], water_cfg["slot"])
-
-    # Cleaning reservoir (slot 4)
-    ids["cleaning_id"] = robot.load_labware(
-        lab_cfg["cleaning"]["name"], lab_cfg["cleaning"]["slot"],
-    )
-
-    # Dispense plate (slot 1)
-    ids["dispense_id"] = robot.load_labware(
-        lab_cfg["dispense"]["name"], lab_cfg["dispense"]["slot"],
-    )
-
-    return ids
-
-
-def _get_control_rinse_col(dye_name: str, config: Dict) -> str:
-    """Get the rinse column for a control dye from config."""
-    cleaning_cols = config.get("labware", {}).get("cleaning", {}).get("columns", {})
-    mapping = {
-        "red": cleaning_cols.get("control_rinse", "A6"),
-        "green": cleaning_cols.get("control_rinse", "A6"),
-        "blue": cleaning_cols.get("control_rinse", "A6"),
-        "water": cleaning_cols.get("water_rinse", "A5"),
-    }
-    return mapping.get(dye_name, "A6")
+    return result
 
 
 # ======================================================================
@@ -666,20 +415,19 @@ def _get_control_rinse_col(dye_name: str, config: Dict) -> str:
 # ======================================================================
 
 def _capture_plate_image(
-    config: Dict[str, Any],
+    cfg: ColorMixingConfig,
     run_id: str,
     col_idx: int,
     base_dir: str,
 ) -> str:
     """Capture a plate image using the overhead camera."""
-    from vision import USBCamera
+    from openot2.vision import USBCamera
 
-    cam_cfg = config.get("camera", {})
     camera = USBCamera(
-        camera_id=cam_cfg.get("device_id", 0),
-        width=cam_cfg.get("width", 1920),
-        height=cam_cfg.get("height", 1080),
-        warmup_frames=cam_cfg.get("warmup_frames", 10),
+        camera_id=cfg.camera.device_id,
+        width=cfg.camera.width,
+        height=cfg.camera.height,
+        warmup_frames=cfg.camera.warmup_frames,
     )
 
     run_folder = os.path.join(base_dir, "runs", run_id)
@@ -703,7 +451,6 @@ def _capture_plate_image(
 # ======================================================================
 
 def _pause_for_plate_swap(robot: OT2Client):
-    """Pause robot for plate and tip swap."""
     print("\n*** PLATE FULL — pausing for plate swap ***")
     robot.home()
     robot.pause("Plate full. Replace plate, refill cleaning water, then resume.")
@@ -718,7 +465,6 @@ def _log_iteration(
     distance: float,
     phase: str,
 ):
-    """Append one row to the experiment log."""
     log_rows.append({
         "iteration": iteration,
         "column": col_idx + 1,
@@ -735,7 +481,6 @@ def _log_iteration(
 
 
 def _save_results_csv(log_rows: List[Dict], run_folder: str):
-    """Save experiment results to ``<run_folder>/results/``."""
     import pandas as pd
 
     if not log_rows:
@@ -749,7 +494,7 @@ def _save_results_csv(log_rows: List[Dict], run_folder: str):
 
 
 # ======================================================================
-# Iteration display (photo + prediction + adjustment plan)
+# Iteration display
 # ======================================================================
 
 def _display_iteration(
@@ -757,30 +502,23 @@ def _display_iteration(
     phase: str,
     col_idx: int,
     volumes: np.ndarray,
-    exp_result: Dict[str, Any],
+    result: CaptureResult,
     target_rgb: np.ndarray,
     all_dist: List[float],
     surrogate=None,
     next_volumes: Optional[np.ndarray] = None,
     distance_metric: str = "rgb_euclidean",
 ):
-    """
-    Display a visual summary of one experiment iteration.
-
-    Shows: captured plate photo (thumbnail), extracted colors for the column,
-    GP prediction vs observation, and the adjustment plan for next iteration.
-    """
     import matplotlib.pyplot as plt
     import cv2
 
-    mean_rgb = exp_result["mean_rgb"]
-    std_rgb = exp_result["std_rgb"]
-    exp_rgb = exp_result.get("calibrated_experiment_rgb", exp_result["experiment_rgb"])
-    ctrl_rgb = exp_result["control_rgb"]
-    image_path = exp_result["image_path"]
+    mean_rgb = result.mean_rgb
+    std_rgb = result.std_rgb
+    exp_rgb = result.calibrated_experiment_rgb
+    ctrl_rgb = result.control_rgb
+    image_path = result.image_path
     dist = color_distance(mean_rgb, target_rgb, distance_metric)
 
-    # --- Build figure: [photo] [column colors] [prediction comparison] ---
     fig, axes = plt.subplots(1, 4, figsize=(16, 3.5),
                              gridspec_kw={"width_ratios": [3, 1, 2, 2]})
     fig.suptitle(
@@ -789,7 +527,6 @@ def _display_iteration(
         fontsize=12, fontweight="bold",
     )
 
-    # Panel 1: Captured plate photo (thumbnail)
     if os.path.exists(image_path):
         img = cv2.imread(image_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -797,7 +534,6 @@ def _display_iteration(
         axes[0].set_title("Captured plate", fontsize=9)
     axes[0].axis("off")
 
-    # Panel 2: Column color swatches (A-H)
     row_labels = list("ABCDEFGH")
     row_colors = []
     for label in row_labels[:4]:
@@ -815,7 +551,6 @@ def _display_iteration(
     axes[1].set_xticks([])
     axes[1].set_yticks([])
 
-    # Panel 3: Observed vs Target color comparison
     obs_norm = np.clip(mean_rgb / 255.0, 0, 1)
     tgt_norm = np.clip(target_rgb / 255.0, 0, 1)
     axes[2].barh(1, 1, color=obs_norm, edgecolor="black", linewidth=1)
@@ -824,7 +559,6 @@ def _display_iteration(
     axes[2].set_yticklabels(["Target", "Observed"], fontsize=9)
     axes[2].set_xticks([])
     axes[2].set_title("Color comparison", fontsize=9)
-    # Add RGB text
     axes[2].text(0.5, 1, f"({mean_rgb[0]:.0f},{mean_rgb[1]:.0f},{mean_rgb[2]:.0f})",
                  ha="center", va="center", fontsize=8,
                  color="white" if np.mean(obs_norm) < 0.5 else "black")
@@ -832,7 +566,6 @@ def _display_iteration(
                  ha="center", va="center", fontsize=8,
                  color="white" if np.mean(tgt_norm) < 0.5 else "black")
 
-    # Panel 4: Prediction report text
     axes[3].axis("off")
     report_lines = [
         f"Volumes: R={volumes[0]:.1f} G={volumes[1]:.1f} B={volumes[2]:.1f}",
@@ -841,13 +574,12 @@ def _display_iteration(
         f"Target:   ({target_rgb[0]:.0f}, {target_rgb[1]:.0f}, {target_rgb[2]:.0f})",
         f"Distance: {dist:.1f}",
     ]
-    if exp_result.get("used_calibration"):
-        ref_col = exp_result.get("reference_source_column")
+    if result.used_calibration:
+        ref_col = result.reference_source_column
         report_lines.append(f"Cal:      ref col {ref_col}")
-    elif exp_result.get("calibration_warning"):
+    elif result.calibration_warning:
         report_lines.append("Cal:      raw fallback")
 
-    # GP prediction comparison (BO phase only)
     if surrogate is not None:
         try:
             pred_mean, pred_std = surrogate.predict(volumes.reshape(1, 3))
@@ -859,7 +591,6 @@ def _display_iteration(
         except Exception:
             pass
 
-    # Next step plan
     report_lines.append("")
     if len(all_dist) > 0:
         best_idx = int(np.argmin(all_dist))

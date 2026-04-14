@@ -1,20 +1,36 @@
-"""FastAPI sub-application for the color mixing protocol page."""
+"""FastAPI sub-application for the task protocol page.
+
+Generic integration layer — task-specific semantics come from the
+:class:`~openot2.task_api.plugin.TaskPlugin` and its
+:class:`~openot2.task_api.plugin.TaskWebExtension`.
+
+This module contains only framework-level routes (start, stop, pause,
+resume, reset, status, plan, calibrate, home, robot-calibration-profile).
+Task-specific routes (gamut, set-target, …) are provided by the
+plugin's web extension and mounted automatically.
+"""
 
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
+
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _OT2_TEMPLATES_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "OpenOT2" / "webapp" / "templates"
+    Path(__file__).resolve().parent.parent.parent / "OpenOT2" / "openot2" / "webapp" / "templates"
 )
 
 
 def create_protocol_app(loop_manager, nav_links: list = None) -> FastAPI:
-    """Create the protocol monitoring FastAPI sub-app."""
+    """Create the protocol monitoring FastAPI sub-app.
 
-    app = FastAPI(title="Color Mixing Protocol")
+    The loop manager provides all task interaction.  The plugin attached
+    to the loop is used for calibration targets and status payloads.
+    Task-specific routes are mounted from the plugin's web extension.
+    """
+
+    app = FastAPI(title="Protocol")
     _nav = nav_links
 
     templates = Jinja2Templates(
@@ -25,126 +41,11 @@ def create_protocol_app(loop_manager, nav_links: list = None) -> FastAPI:
         return _nav or []
 
     def _build_robot_calibration_profile() -> dict:
-        cfg = loop_manager.config
-        metadata = cfg.get("metadata", {})
-        labware = cfg.get("labware", {})
-        pipettes = cfg.get("pipettes", {})
-        total_volume = float(cfg.get("total_volume_ul", 200))
-        mix_volume = float(cfg.get("experiment", {}).get("mix_volume_ul", total_volume))
-
-        tipracks = labware.get("tipracks", [])
-        sources = labware.get("sources", {})
-        water = labware.get("water", {})
-        cleaning = labware.get("cleaning", {})
-        cleaning_cols = cleaning.get("columns", {})
-        plate = labware.get("dispense") or labware.get("plate") or {}
-
-        def _tiprack_for_mount(mount: str) -> dict | None:
-            for tiprack in tipracks:
-                if str(tiprack.get("for") or tiprack.get("mount") or "") == mount:
-                    return tiprack
-            return None
-
-        def _tip_well_for_mount(tiprack: dict, mount: str) -> str:
-            if mount == "left":
-                control_tips = tiprack.get("control_tips", {})
-                if control_tips:
-                    return next(iter(control_tips.values()))
-                return "A1"
-
-            tip_columns = tiprack.get("tip_columns", {})
-            if tip_columns:
-                first_col = next(iter(tip_columns.values()))
-                if str(first_col).isdigit():
-                    return f"A{first_col}"
-            return "A1"
-
-        targets: list[dict] = []
-
-        def add_target(
-            *,
-            name: str,
-            pipette_mount: str,
-            labware_slot: str,
-            well: str,
-            action: str,
-            volume: float | None = None,
-        ) -> None:
-            target = {
-                "name": name,
-                "pipette_mount": pipette_mount,
-                "labware_slot": str(labware_slot),
-                "well": well,
-                "action": action,
-            }
-            if volume is not None:
-                target["volume"] = float(volume)
-            targets.append(target)
-
-        for mount in ("left", "right"):
-            if mount not in pipettes:
-                continue
-
-            tiprack = _tiprack_for_mount(mount)
-            if tiprack:
-                add_target(
-                    name=f"{mount.title()} tiprack (slot {tiprack['slot']})",
-                    pipette_mount=mount,
-                    labware_slot=tiprack["slot"],
-                    well=_tip_well_for_mount(tiprack, mount),
-                    action="pick_up_tip",
-                )
-
-            source_volume = total_volume if mount == "left" else mix_volume
-            for color in ("red", "green", "blue"):
-                src = sources.get(color)
-                if not src:
-                    continue
-                add_target(
-                    name=f"{color.title()} reservoir ({mount})",
-                    pipette_mount=mount,
-                    labware_slot=src["slot"],
-                    well=src.get("well", "A1"),
-                    action="aspirate",
-                    volume=source_volume,
-                )
-
-            if mount == "left" and water:
-                add_target(
-                    name="Water reservoir (left)",
-                    pipette_mount="left",
-                    labware_slot=water["slot"],
-                    well=water.get("well", "A1"),
-                    action="aspirate",
-                    volume=total_volume,
-                )
-
-            if plate:
-                add_target(
-                    name=f"Plate dispense ({mount})",
-                    pipette_mount=mount,
-                    labware_slot=plate["slot"],
-                    well="A1",
-                    action="dispense",
-                    volume=total_volume if mount == "left" else mix_volume,
-                )
-
-            if cleaning:
-                if mount == "left":
-                    rinse_well = cleaning_cols.get("control_rinse") or cleaning_cols.get("water_rinse") or "A1"
-                else:
-                    rinse_well = cleaning_cols.get("mix_rinse") or cleaning_cols.get("red_rinse") or "A1"
-                add_target(
-                    name=f"Cleaning reservoir ({mount})",
-                    pipette_mount=mount,
-                    labware_slot=cleaning["slot"],
-                    well=rinse_well,
-                    action="aspirate",
-                    volume=source_volume,
-                )
-
-        profile_name = f"{metadata.get('name', 'protocol')}_robot_calibration"
-        return {"name": profile_name, "targets": targets}
+        """Build a calibration profile from the plugin + config."""
+        plugin = loop_manager.plugin
+        cfg = loop_manager.task_cfg
+        targets = plugin.build_calibration_targets(cfg)
+        return {"name": f"{plugin.name}_robot_calibration", "targets": targets}
 
     @app.get("/")
     async def protocol_page(request: Request):
@@ -205,40 +106,27 @@ def create_protocol_app(loop_manager, nav_links: list = None) -> FastAPI:
 
     @app.get("/robot-calibration-profile")
     async def robot_calibration_profile():
-        """Build a calibration profile from the active protocol config."""
+        """Build a calibration profile from the plugin and config."""
         return _build_robot_calibration_profile()
 
     @app.post("/calibrate")
     async def calibrate():
-        """Run calibration column to measure pure dye colors and compute gamut."""
+        """Run calibration via the loop manager."""
         result = loop_manager.calibrate()
         return result
 
+    # ------------------------------------------------------------------
+    # Mount task web extension routes (e.g. /gamut, /set-target)
+    # ------------------------------------------------------------------
+    ext = loop_manager.plugin.web_extension(loop_manager._config)
+    if ext is not None:
+        # Give the extension access to the loop for state management
+        if hasattr(ext, "bind"):
+            ext.bind(loop_manager)
 
-
-    @app.get("/gamut")
-    async def get_gamut():
-        """Return the computed gamut including all samples for the color picker."""
-        s = loop_manager.status()
-        # Include full samples_rgb for the canvas color picker
-        gamut = loop_manager._gamut or {}
-        return {
-            "calibration_done": s.get("calibration_done", False),
-            "pure_rgbs": s.get("pure_rgbs"),
-            "water_rgb": s.get("water_rgb"),
-            "suggested_targets": s.get("gamut_suggested_targets"),
-            "samples_rgb": gamut.get("samples_rgb", []),
-            "custom_target": s.get("custom_target"),
-        }
-
-    @app.post("/set-target")
-    async def set_target(request: Request):
-        """Set the target RGB from the gamut picker."""
-        body = await request.json()
-        rgb = body.get("rgb")
-        if not rgb or len(rgb) != 3:
-            return {"ok": False, "error": "Must provide rgb: [R, G, B]"}
-        result = loop_manager.set_target(rgb)
-        return result
+        extra = ext.extra_routes()
+        if extra is not None and hasattr(extra, "__iter__"):
+            for method, path, handler in extra:
+                app.add_api_route(path, handler, methods=[method.upper()])
 
     return app

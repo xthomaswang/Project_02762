@@ -119,10 +119,10 @@ class TestParkInsteadOfHome(unittest.TestCase):
     """Pipeline should park instead of homing before imaging."""
 
     def test_park_pos_is_passed_through(self):
-        """_run_single_experiment signature accepts park_pos."""
-        from src.pipeline import _run_single_experiment
+        """_run_single_iteration signature accepts park_pos."""
+        from src.pipeline import _run_single_iteration
         import inspect
-        sig = inspect.signature(_run_single_experiment)
+        sig = inspect.signature(_run_single_iteration)
         self.assertIn("park_pos", sig.parameters)
         self.assertIn("cached_reference", sig.parameters)
         self.assertIn("is_quick", sig.parameters)
@@ -213,25 +213,31 @@ class TestDistanceMetricIntegration(unittest.TestCase):
 
 
 class TestCalibrationWarnings(unittest.TestCase):
-    """Pipeline should surface calibration fallback reasons."""
+    """Task module should surface calibration fallback reasons."""
 
-    @patch("src.pipeline.summarize_column", return_value=MagicMock())
-    @patch("src.pipeline.extract_labeled_plate", return_value=MagicMock())
-    @patch("src.pipeline.build_runtime_reference", side_effect=ValueError("bad controls"))
-    @patch("src.pipeline._capture_plate_image", return_value="/tmp/fake.jpg")
-    @patch("src.pipeline.extract_experiment_rgb")
+    @patch("src.tasks.color_mixing.observation.build_runtime_reference",
+           side_effect=ValueError("bad controls"))
+    @patch("src.tasks.color_mixing.observation.extract_labeled_plate",
+           return_value=MagicMock())
+    @patch("src.tasks.color_mixing.observation.extract_experiment_rgb")
     @patch("cv2.imread", return_value=np.zeros((10, 10, 3), dtype=np.uint8))
-    def test_run_single_experiment_reports_calibration_failure(
+    def test_analyze_capture_reports_calibration_failure(
         self,
         _mock_imread,
         mock_extract_rgb,
-        _mock_capture,
-        _mock_build_ref,
         _mock_extract_plate,
-        _mock_summary,
+        _mock_build_ref,
     ):
         """Calibration failure should return raw RGB plus an explicit warning."""
-        from src.pipeline import _run_single_experiment
+        from src.tasks.color_mixing.observation import analyze_capture
+        from src.tasks.color_mixing.config import load_task_config
+        import os
+
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "configs", "color_mixing.yaml",
+        )
+        cfg = load_task_config(config_path)
 
         mock_extract_rgb.return_value = {
             "experiment_rgb": np.array([
@@ -250,41 +256,19 @@ class TestCalibrationWarnings(unittest.TestCase):
             },
         }
 
-        ops = MagicMock()
-        ops.client = MagicMock()
-        config = {
-            "experiment": {"settle_time_seconds": 0, "mix_cycles": 3, "mix_volume_ul": 150},
-            "well_layout": {},
-            "total_volume_ul": 200,
-        }
-        labware_ids = {
-            "cleaning_id": "clean",
-            "tiprack_left_id": "tl",
-            "tiprack_right_id": "tr",
-            "red_source_id": "red",
-            "green_source_id": "green",
-            "blue_source_id": "blue",
-            "water_source_id": "water",
-            "dispense_id": "plate",
-        }
-
-        result = _run_single_experiment(
-            ops=ops,
-            config=config,
-            labware_ids=labware_ids,
-            volumes=np.array([50.0, 50.0, 100.0]),
+        result = analyze_capture(
+            image_path="/tmp/fake.jpg",
+            cfg=cfg,
             col_idx=0,
-            run_id="run-1",
-            base_dir="data",
             skip_controls=False,
         )
 
-        self.assertFalse(result["used_calibration"])
-        self.assertIn("Calibration failed", result["calibration_warning"])
-        self.assertIsNone(result["reference_source_column"])
-        np.testing.assert_allclose(result["mean_rgb"], result["raw_mean_rgb"])
+        self.assertFalse(result.used_calibration)
+        self.assertIn("Calibration failed", result.calibration_warning)
+        self.assertIsNone(result.reference_source_column)
+        np.testing.assert_allclose(result.mean_rgb, result.raw_mean_rgb)
         np.testing.assert_allclose(
-            result["calibrated_experiment_rgb"], result["experiment_rgb"],
+            result.calibrated_experiment_rgb, result.experiment_rgb,
         )
 
 

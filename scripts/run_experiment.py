@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""CLI entry point for running an active learning experiment."""
+"""CLI entry point for running an active learning experiment.
+
+Uses the plugin architecture as the canonical path: loads the task
+plugin, derives config from it, and runs the experiment pipeline.
+
+Usage::
+
+    python -m scripts.run_experiment --config configs/color_mixing.yaml
+    python -m scripts.run_experiment --config configs/color_mixing.yaml --skip-precheck
+"""
 
 import argparse
 import sys
-import os
 
-# Allow running from project root without installing the package.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from src.preflight import load_config, run_device_precheck_from_config, load_or_create_grid_calibration
+from src.tasks.color_mixing.plugin import ColorMixingPlugin
+from src.preflight import run_device_precheck_from_config, load_or_create_grid_calibration
 from src.pipeline import run_active_learning_loop
 
 
@@ -17,8 +23,8 @@ def main():
         description="Run active learning colorimetric assay optimization.",
     )
     parser.add_argument(
-        "--config", type=str, default="configs/experiment.yaml",
-        help="Path to experiment YAML config.",
+        "--config", type=str, default="configs/color_mixing.yaml",
+        help="Path to experiment YAML config (default: configs/color_mixing.yaml).",
     )
     parser.add_argument(
         "--n-initial", type=int, default=None,
@@ -42,11 +48,16 @@ def main():
     )
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    # ---- Load plugin and config through plugin ----
+    plugin = ColorMixingPlugin()
+    config = plugin.load_config(args.config)
 
-    # Device precheck
+    # Device precheck (uses raw YAML for preflight compatibility)
     if not args.skip_precheck:
-        report = run_device_precheck_from_config(config)
+        from src.preflight import load_config as load_raw_config
+
+        raw_config = load_raw_config(args.config)
+        report = run_device_precheck_from_config(raw_config)
         if not report.all_ok:
             print("Device precheck FAILED — aborting.")
             print(f"  Robot: {'OK' if report.robot.reachable else 'UNREACHABLE'}")
@@ -57,7 +68,10 @@ def main():
     # Load grid calibration if available
     grid = None
     try:
-        grid = load_or_create_grid_calibration(config)
+        from src.preflight import load_config as load_raw_config
+
+        raw_config = load_raw_config(args.config)
+        grid = load_or_create_grid_calibration(raw_config)
     except ValueError:
         print("No grid calibration found — using default grid")
 
