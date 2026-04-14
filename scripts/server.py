@@ -118,13 +118,6 @@ def main() -> None:
     protocol_app = create_protocol_app(loop_manager, nav_links=ot2_app._nav_links)
     ot2_app.mount_app("/protocol", protocol_app)
 
-    # ---- Attach task web extension if present ----
-    ext = plugin.web_extension(cfg)
-    if ext is not None:
-        routes = ext.extra_routes()
-        if routes is not None:
-            ot2_app.mount_app("/task", routes)
-
     # ---- Serve ----
     logger.info(
         "Starting automation_lab server on http://%s:%d", args.host, args.port

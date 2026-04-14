@@ -178,17 +178,27 @@ class ColorMixingPlugin:
     # Planning
     # ------------------------------------------------------------------
 
-    def build_plan(self, config: ColorMixingConfig, state: dict, mode: str) -> dict:
-        n_initial = state.get("n_initial", config.experiment.n_initial)
+    def build_plan(
+        self,
+        config: ColorMixingConfig,
+        state: dict,
+        mode: str,
+        pre_calibrated: bool = False,
+    ) -> dict:
+        n_initial_configured = state.get("n_initial", config.experiment.n_initial)
         n_opt = state.get("n_optimization", config.experiment.n_optimization)
+        # Pre-calibrated runs consume one random iteration for calibration.
+        n_initial = max(n_initial_configured - 1, 0) if pre_calibrated else n_initial_configured
         return {
             "total_iterations": n_initial + n_opt,
             "n_initial": n_initial,
+            "n_initial_configured": n_initial_configured,
             "n_optimization": n_opt,
             "max_per_plate": config.experiment.max_per_plate,
             "target_color": list(config.target_color),
             "convergence_threshold": config.convergence_threshold,
             "mode": mode,
+            "pre_calibrated": pre_calibrated,
         }
 
     # ------------------------------------------------------------------

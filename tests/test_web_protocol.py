@@ -38,14 +38,22 @@ def _load_config():
     return plugin.load_config(CONFIG_PATH)
 
 
-def _make_loop(store=None, register_dummy_handlers=False):
+def _copy_config_to(tmpdir) -> str:
+    """Copy the test config into an isolated temp directory."""
+    tmpdir = Path(tmpdir)
+    config_path = tmpdir / "color_mixing.yaml"
+    config_path.write_text(Path(CONFIG_PATH).read_text(encoding="utf-8"), encoding="utf-8")
+    return str(config_path)
+
+
+def _make_loop(store=None, register_dummy_handlers=False, config_path=CONFIG_PATH):
     """Create loop with temp store and plugin. Optionally register dummy handlers."""
     if store is None:
         tmpdir = tempfile.mkdtemp()
         store = JsonRunStore(base_dir=tmpdir)
     runner = TaskRunner(store=store)
     plugin = _make_plugin()
-    config = plugin.load_config(CONFIG_PATH)
+    config = plugin.load_config(config_path)
 
     if register_dummy_handlers:
         for kind in ("use_pipette", "transfer", "mix", "home", "wait"):
@@ -83,7 +91,7 @@ def _make_loop(store=None, register_dummy_handlers=False):
         store=store,
         plugin=plugin,
         config=config,
-        config_path=CONFIG_PATH,
+        config_path=config_path,
     )
 
 
@@ -691,38 +699,44 @@ class TestCalibrationFlow(unittest.TestCase):
 
     def test_calibration_delegates_post_processing_to_plugin(self):
         """Calibration must delegate post-processing to plugin.apply_calibration_result."""
-        loop = _make_loop(register_dummy_handlers=True)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JsonRunStore(base_dir=tmpdir)
+            loop = _make_loop(
+                store=store,
+                register_dummy_handlers=True,
+                config_path=_copy_config_to(tmpdir),
+            )
 
-        with mock.patch.object(
-            loop.plugin, "apply_calibration_result",
-            wraps=loop.plugin.apply_calibration_result,
-        ) as mock_apply:
-            with mock.patch(
-                "cv2.imread", return_value=np.zeros((8, 8, 3), dtype=np.uint8)
-            ), mock.patch(
-                "src.vision.geometry.load_grid_calibration", return_value=object()
-            ), mock.patch(
-                "src.vision.extraction.extract_well_rgb",
-                side_effect=[
-                    np.array([255.0, 0.0, 0.0]),
-                    np.array([0.0, 255.0, 0.0]),
-                    np.array([0.0, 0.0, 255.0]),
-                    np.array([240.0, 240.0, 240.0]),
-                ],
-            ), mock.patch(
-                "src.color.metrics.compute_reachable_gamut",
-                return_value={"samples_rgb": []},
-            ):
-                result = loop.calibrate()
+            with mock.patch.object(
+                loop.plugin, "apply_calibration_result",
+                wraps=loop.plugin.apply_calibration_result,
+            ) as mock_apply:
+                with mock.patch(
+                    "cv2.imread", return_value=np.zeros((8, 8, 3), dtype=np.uint8)
+                ), mock.patch(
+                    "src.vision.geometry.load_grid_calibration", return_value=object()
+                ), mock.patch(
+                    "src.vision.extraction.extract_well_rgb",
+                    side_effect=[
+                        np.array([255.0, 0.0, 0.0]),
+                        np.array([0.0, 255.0, 0.0]),
+                        np.array([0.0, 0.0, 255.0]),
+                        np.array([240.0, 240.0, 240.0]),
+                    ],
+                ), mock.patch(
+                    "src.color.metrics.compute_reachable_gamut",
+                    return_value={"samples_rgb": []},
+                ):
+                    result = loop.calibrate()
 
-            self.assertTrue(result["ok"])
-            mock_apply.assert_called_once()
-            # Calibration artifacts should be in task state, not in loop fields
-            cal = loop._cal()
-            self.assertTrue(cal.get("done"))
-            self.assertIn("pure_rgbs", cal)
-            self.assertIn("water_rgb", cal)
-            self.assertIn("gamut", cal)
+                self.assertTrue(result["ok"])
+                mock_apply.assert_called_once()
+                # Calibration artifacts should be in task state, not in loop fields
+                cal = loop._cal()
+                self.assertTrue(cal.get("done"))
+                self.assertIn("pure_rgbs", cal)
+                self.assertIn("water_rgb", cal)
+                self.assertIn("gamut", cal)
 
     def test_loop_does_not_compute_gamut_itself(self):
         """loop.py must not import compute_reachable_gamut or extract_well_rgb."""
@@ -1013,11 +1027,14 @@ class TestServerPluginDriven(unittest.TestCase):
         self.assertIn("plugin=plugin", src)
         self.assertIn("config=cfg", src)
 
-    def test_server_checks_web_extension(self):
-        server_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "server.py")
-        with open(server_path) as f:
+    def test_protocol_app_mounts_web_extension(self):
+        """The protocol sub-app (not server.py) owns web-extension mounting."""
+        app_path = os.path.join(os.path.dirname(__file__), "..", "src", "web", "app.py")
+        with open(app_path) as f:
             src = f.read()
         self.assertIn("web_extension", src)
+        self.assertIn("extra_routes", src)
+        self.assertIn("add_api_route", src)
 
     def test_server_no_labware_section_parsing(self):
         server_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "server.py")

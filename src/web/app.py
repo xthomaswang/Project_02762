@@ -125,7 +125,7 @@ def create_protocol_app(loop_manager, nav_links: list = None) -> FastAPI:
             ext.bind(loop_manager)
 
         extra = ext.extra_routes()
-        if extra is not None and hasattr(extra, "__iter__"):
+        if isinstance(extra, (list, tuple)):
             for method, path, handler in extra:
                 app.add_api_route(path, handler, methods=[method.upper()])
 

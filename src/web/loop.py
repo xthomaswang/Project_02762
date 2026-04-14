@@ -121,16 +121,21 @@ class ActiveLearningLoop:
     # ------------------------------------------------------------------
 
     def _enrich_plan(self, plugin_plan: dict, mode: str) -> dict:
-        """Enrich the plugin's plan with per-iteration UI details."""
+        """Enrich the plugin's plan with per-iteration UI details.
+
+        The plugin is authoritative for ``n_initial`` and
+        ``total_iterations`` (including the pre-calibrated adjustment);
+        this method only adds per-iteration display fields.
+        """
         from src.ml import sample_simplex
 
         total = plugin_plan.get("total_iterations", 0)
         n_initial = plugin_plan.get("n_initial", 0)
+        n_initial_configured = plugin_plan.get("n_initial_configured", n_initial)
+        pre_calibrated = plugin_plan.get("pre_calibrated", False)
         seed = getattr(self._config, "seed", 42)
         total_volume = float(getattr(self._config, "total_volume_ul", 200))
-        calibration_done = self._calibration_done
-        start_column = 1 if calibration_done else 0
-        pre_calibrated = calibration_done
+        start_column = 1 if pre_calibrated else 0
 
         if mode == "quick":
             mix_cycles = 2
@@ -148,11 +153,6 @@ class ActiveLearningLoop:
         threshold = float(getattr(self._config, "convergence_threshold", 50))
         ml = getattr(self._config, "ml", None)
         distance_metric = getattr(ml, "distance_metric", "rgb_euclidean") if ml else "rgb_euclidean"
-
-        # Adjust n_initial when pre-calibrated
-        if pre_calibrated:
-            n_initial = max(n_initial - 1, 0)
-            total = n_initial + plugin_plan.get("n_optimization", 0)
 
         iterations: list[dict] = []
         for i in range(total):
@@ -182,7 +182,7 @@ class ActiveLearningLoop:
             "convergence_threshold": threshold,
             "total_iterations": total,
             "n_initial": n_initial,
-            "n_initial_configured": plugin_plan.get("n_initial", 0),
+            "n_initial_configured": n_initial_configured,
             "n_optimization": plugin_plan.get("n_optimization", 0),
             "mix_cycles": mix_cycles,
             "skip_controls_after_first": skip_controls_after_first,
@@ -283,7 +283,10 @@ class ActiveLearningLoop:
                 self._task_state.setdefault("cache", {})["cached_reference"] = cached_ref
 
         # Build plan via plugin, then enrich for UI
-        plugin_plan = self.plugin.build_plan(self._config, self._task_state, mode)
+        plugin_plan = self.plugin.build_plan(
+            self._config, self._task_state, mode,
+            pre_calibrated=self._calibration_done,
+        )
         self._plan = self._enrich_plan(plugin_plan, mode)
 
         # Override target if user selected from gamut
@@ -564,7 +567,8 @@ class ActiveLearningLoop:
     def _build_default_plan(self) -> dict:
         """Build a default plan for status display when no loop is started."""
         plugin_plan = self.plugin.build_plan(
-            self._config, self._task_state or {}, self._mode
+            self._config, self._task_state or {}, self._mode,
+            pre_calibrated=self._calibration_done,
         )
         return self._enrich_plan(plugin_plan, self._mode)
 
@@ -572,6 +576,7 @@ class ActiveLearningLoop:
         """Build and return a plan without starting the loop."""
         plugin_plan = self.plugin.build_plan(
             self._config, self._task_state or {}, mode,
+            pre_calibrated=self._calibration_done,
         )
         return self._enrich_plan(plugin_plan, mode)
 
